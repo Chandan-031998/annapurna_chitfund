@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         Int         @id @default(autoincrement())
+  full_name  String      @db.VarChar(150)
+  email      String      @unique(map: "email") @db.VarChar(150)
+  mobile     String      @unique(map: "mobile") @db.VarChar(20)
+  password   String      @db.VarChar(255)
+  role       users_role? @default(member)
+  address    String?     @db.Text
+  created_at DateTime    @default(now()) @db.Timestamp(0)
+  reports    reports[]
+
+  @@map("users")
+}
+
+model Member {
+  id             Int             @id @default(autoincrement())
+  member_code    String?         @unique(map: "member_code") @db.VarChar(50)
+  full_name      String          @db.VarChar(150)
+  mobile         String          @unique(map: "mobile") @db.VarChar(20)
+  email          String?         @db.VarChar(150)
+  address        String?         @db.Text
+  aadhaar_number String?         @db.VarChar(20)
+  photo          String?         @db.VarChar(255)
+  group_id       Int?
+  joining_date   DateTime?       @db.Date
+  status         members_status? @default(active)
+  created_at     DateTime        @default(now()) @db.Timestamp(0)
+  auctions       Auction[]
+  collections    Collection[]
+  chit_groups    ChitGroup?      @relation(fields: [group_id], references: [id], onUpdate: Restrict, map: "members_ibfk_1")
+
+  @@index([group_id], map: "group_id")
+  @@map("members")
+}
+
+model ChitGroup {
+  id              Int                 @id @default(autoincrement())
+  group_name      String              @db.VarChar(150)
+  total_members   Int
+  monthly_amount  Decimal             @db.Decimal(10, 2)
+  duration_months Int
+  start_date      DateTime            @db.Date
+  status          chit_groups_status? @default(active)
+  created_at      DateTime            @default(now()) @db.Timestamp(0)
+  auctions        Auction[]
+  collections     Collection[]
+  members         Member[]
+
+  @@map("chit_groups")
+}
+
+model Collection {
+  id             Int                         @id @default(autoincrement())
+  member_id      Int
+  group_id       Int
+  amount         Decimal                     @db.Decimal(10, 2)
+  payment_month  String?                     @db.VarChar(50)
+  payment_date   DateTime?                   @db.Date
+  payment_mode   collections_payment_mode?
+  payment_status collections_payment_status? @default(paid)
+  remarks        String?                     @db.Text
+  created_at     DateTime                    @default(now()) @db.Timestamp(0)
+  members        Member                      @relation(fields: [member_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "collections_ibfk_1")
+  chit_groups    ChitGroup                   @relation(fields: [group_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "collections_ibfk_2")
+  receipts       receipts[]
+
+  @@index([group_id], map: "group_id")
+  @@index([member_id], map: "member_id")
+  @@map("collections")
+}
+
+model Auction {
+  id               Int       @id @default(autoincrement())
+  group_id         Int
+  auction_month    String?   @db.VarChar(50)
+  winner_member_id Int?
+  bid_amount       Decimal?  @db.Decimal(10, 2)
+  prize_amount     Decimal?  @db.Decimal(10, 2)
+  auction_date     DateTime? @db.Date
+  remarks          String?   @db.Text
+  created_at       DateTime  @default(now()) @db.Timestamp(0)
+  chit_groups      ChitGroup @relation(fields: [group_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "auctions_ibfk_1")
+  members          Member?   @relation(fields: [winner_member_id], references: [id], onUpdate: Restrict, map: "auctions_ibfk_2")
+
+  @@index([group_id], map: "group_id")
+  @@index([winner_member_id], map: "winner_member_id")
+  @@map("auctions")
+}
+
+model Expense {
+  id           Int                    @id @default(autoincrement())
+  title        String                 @db.VarChar(150)
+  category     String                 @default("General") @db.VarChar(80)
+  amount       Decimal                @db.Decimal(10, 2)
+  expense_date DateTime?              @db.Date
+  payment_mode expenses_payment_mode?
+  remarks      String?                @db.Text
+  created_at   DateTime               @default(now()) @db.Timestamp(0)
+
+  @@map("expenses")
+}
+
+model LedgerEntry {
+  id          Int                       @id @default(autoincrement())
+  entry_type  ledger_entries_entry_type
+  title       String?                   @db.VarChar(150)
+  amount      Decimal?                  @db.Decimal(10, 2)
+  entry_date  DateTime?                 @db.Date
+  description String?                   @db.Text
+  created_at  DateTime                  @default(now()) @db.Timestamp(0)
+
+  @@map("ledger_entries")
+}
+
+model notifications {
+  id                Int                              @id @default(autoincrement())
+  title             String?                          @db.VarChar(200)
+  message           String?                          @db.Text
+  notification_type notifications_notification_type?
+  sent_to           String?                          @db.VarChar(150)
+  status            notifications_status?            @default(pending)
+  created_at        DateTime                         @default(now()) @db.Timestamp(0)
+}
+
+model receipts {
+  id             Int         @id @default(autoincrement())
+  receipt_number String?     @unique(map: "receipt_number") @db.VarChar(100)
+  collection_id  Int?
+  generated_date DateTime    @default(now()) @db.Timestamp(0)
+  collections    Collection? @relation(fields: [collection_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "receipts_ibfk_1")
+
+  @@index([collection_id], map: "collection_id")
+}
+
+model reports {
+  id             Int      @id @default(autoincrement())
+  report_name    String?  @db.VarChar(150)
+  report_type    String?  @db.VarChar(100)
+  generated_by   Int?
+  generated_date DateTime @default(now()) @db.Timestamp(0)
+  users          User?    @relation(fields: [generated_by], references: [id], onUpdate: Restrict, map: "reports_ibfk_1")
+
+  @@index([generated_by], map: "generated_by")
+}
+
+enum ledger_entries_entry_type {
+  credit
+  debit
+}
+
+enum notifications_notification_type {
+  sms
+  whatsapp
+  email
+}
+
+enum expenses_payment_mode {
+  cash
+  bank
+  upi
+}
+
+enum notifications_status {
+  sent
+  pending
+  failed
+}
+
+enum users_role {
+  admin
+  collector
+  accountant
+  member
+}
+
+enum chit_groups_status {
+  active
+  completed
+  pending
+}
+
+enum collections_payment_mode {
+  cash
+  gpay
+  phonepe
+  bank_transfer
+}
+
+enum collections_payment_status {
+  paid
+  pending
+  partial
+}
+
+enum members_status {
+  active
+  inactive
+}
