@@ -14,6 +14,14 @@ function clearAuthStorage() {
   localStorage.removeItem('annapurna_user')
 }
 
+function isSessionEndpoint(url?: string) {
+  return Boolean(url && (
+    url.includes('/auth/login') ||
+    url.includes('/auth/register') ||
+    url.includes('/auth/profile')
+  ))
+}
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token) {
@@ -25,7 +33,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && isSessionEndpoint(error.config?.url)) {
       clearAuthStorage()
       window.dispatchEvent(new Event('annapurna:unauthorized'))
       if (window.location.pathname !== '/login') {

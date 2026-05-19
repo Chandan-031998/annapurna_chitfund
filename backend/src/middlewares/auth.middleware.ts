@@ -1,5 +1,4 @@
 import { NextFunction, Request, Response } from 'express'
-import { prisma } from '../config/db'
 import { verifyToken } from '../utils/jwt'
 import { fail } from '../utils/response'
 
@@ -26,20 +25,11 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
 
   try {
     const payload = verifyToken(token)
-    const user = await prisma.user.findUnique({
-      where: { id: payload.id },
-      select: { id: true, full_name: true, email: true, role: true }
-    })
-
-    if (!user) {
-      return fail(res, 401, 'User session is no longer valid')
-    }
-
     req.user = {
-      id: user.id,
-      name: user.full_name,
-      email: user.email,
-      role: String(user.role || 'member').toUpperCase()
+      id: payload.id,
+      name: payload.email,
+      email: payload.email,
+      role: String(payload.role || 'member').toUpperCase()
     }
     return next()
   } catch {

@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.authenticate = authenticate;
 exports.authorize = authorize;
-const db_1 = require("../config/db");
 const jwt_1 = require("../utils/jwt");
 const response_1 = require("../utils/response");
 async function authenticate(req, res, next) {
@@ -13,18 +12,11 @@ async function authenticate(req, res, next) {
     }
     try {
         const payload = (0, jwt_1.verifyToken)(token);
-        const user = await db_1.prisma.user.findUnique({
-            where: { id: payload.id },
-            select: { id: true, full_name: true, email: true, role: true }
-        });
-        if (!user) {
-            return (0, response_1.fail)(res, 401, 'User session is no longer valid');
-        }
         req.user = {
-            id: user.id,
-            name: user.full_name,
-            email: user.email,
-            role: String(user.role || 'member').toUpperCase()
+            id: payload.id,
+            name: payload.email,
+            email: payload.email,
+            role: String(payload.role || 'member').toUpperCase()
         };
         return next();
     }

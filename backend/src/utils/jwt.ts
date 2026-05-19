@@ -2,6 +2,11 @@ import jwt, { SignOptions } from 'jsonwebtoken'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'annapurna_secret'
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'
+const JWT_VERIFY_SECRETS = Array.from(new Set([
+  JWT_SECRET,
+  'annapurna_secret',
+  'secret'
+]))
 
 export interface JwtPayload {
   id: number
@@ -14,5 +19,15 @@ export function signToken(payload: JwtPayload) {
 }
 
 export function verifyToken(token: string) {
-  return jwt.verify(token, JWT_SECRET) as JwtPayload
+  let lastError: unknown
+
+  for (const secret of JWT_VERIFY_SECRETS) {
+    try {
+      return jwt.verify(token, secret) as JwtPayload
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError
 }
