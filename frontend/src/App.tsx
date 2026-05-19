@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
@@ -192,8 +192,19 @@ function App() {
 
 function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { register, handleSubmit, formState: { errors } } = useForm<Record<string, string>>()
-  const { dispatch, loading } = useAuth()
+  const { dispatch, loading, token } = useAuth()
   const navigate = useNavigate()
+  const clearedInitialSession = useRef(false)
+
+  useEffect(() => {
+    if (!clearedInitialSession.current) {
+      clearedInitialSession.current = true
+      if (token) {
+        toast.dismiss()
+        dispatch(logout())
+      }
+    }
+  }, [dispatch, token])
 
   const submit = handleSubmit(async (values) => {
     try {
@@ -493,7 +504,9 @@ function MemberForm({ value, onSaved }: { value: Member | null; onSaved: () => v
       toast.success(value ? 'Member updated' : 'Member added')
       onSaved()
     } catch (error) {
-      toast.error(apiError(error))
+      if (!isUnauthorizedError(error)) {
+        toast.error(apiError(error))
+      }
     } finally {
       setSaving(false)
     }
@@ -942,7 +955,17 @@ function NotificationsPage() {
 }
 
 function Protected({ children }: { children: ReactNode }) {
-  const { token } = useAuth()
+  const { token, dispatch } = useAuth()
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      dispatch(logout())
+    }
+
+    window.addEventListener('annapurna:unauthorized', handleUnauthorized)
+    return () => window.removeEventListener('annapurna:unauthorized', handleUnauthorized)
+  }, [dispatch])
+
   return token ? children : <Navigate to="/login" replace />
 }
 
@@ -950,11 +973,20 @@ function useResource<T>(url: string) {
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const reload = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      setData(null)
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     try {
       setData(await getData<T>(url))
     } catch (error) {
-      toast.error(apiError(error))
+      if (!isUnauthorizedError(error)) {
+        toast.error(apiError(error))
+      }
       setData(null)
     } finally {
       setLoading(false)
@@ -1218,6 +1250,14 @@ function apiError(error: unknown) {
     return response?.data?.message || 'Request failed'
   }
   return 'Request failed'
+}
+
+function isUnauthorizedError(error: unknown) {
+  if (typeof error === 'object' && error && 'response' in error) {
+    const response = (error as { response?: { status?: number } }).response
+    return response?.status === 401
+  }
+  return false
 }
 
 export default App

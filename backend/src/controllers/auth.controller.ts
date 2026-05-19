@@ -1,7 +1,8 @@
 import { Request, Response } from 'express'
 import dotenv from 'dotenv'
-import jwt from 'jsonwebtoken'
+import bcrypt from 'bcryptjs'
 import mysql, { RowDataPacket } from 'mysql2/promise'
+import { signToken } from '../utils/jwt'
 
 dotenv.config()
 
@@ -58,25 +59,21 @@ export const register = async (req: Request, res: Response) => {
       })
     }
 
+    const passwordHash = await bcrypt.hash(password, 12)
+
     const [result] = await pool.execute(
       'INSERT INTO users (full_name, email, mobile, password, role, address) VALUES (?, ?, ?, ?, ?, ?)',
-      [displayName, email, displayMobile, password, normalizeRole(role), address || null]
+      [displayName, email, displayMobile, passwordHash, normalizeRole(role), address || null]
     )
     const insertId = Number((result as { insertId?: number }).insertId)
     const [rows] = await pool.execute<DbUser[]>('SELECT * FROM users WHERE id = ? LIMIT 1', [insertId])
     const user = rows[0]
 
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role
-      },
-      process.env.JWT_SECRET || 'secret',
-      {
-        expiresIn: '7d'
-      }
-    )
+    const token = signToken({
+      id: user.id,
+      email: user.email,
+      role: user.role
+    })
 
     return res.status(201).json({
       success: true,
@@ -118,24 +115,22 @@ export const login = async (req: Request, res: Response) => {
 
     const user = rows[0]
 
-    if (password !== user.password) {
+    const passwordMatches = user.password.startsWith('$2')
+      ? await bcrypt.compare(password, user.password)
+      : password === user.password
+
+    if (!passwordMatches) {
       return res.status(401).json({
         success: false,
         message: 'Invalid password'
       })
     }
 
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role
-      },
-      process.env.JWT_SECRET || 'secret',
-      {
-        expiresIn: '7d'
-      }
-    )
+    const token = signToken({
+      id: user.id,
+      email: user.email,
+      role: user.role
+    })
 
     return res.json({
       success: true,

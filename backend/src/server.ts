@@ -13,12 +13,16 @@ async function bootstrap() {
   })
 }
 
-bootstrap().catch((error) => {
-  console.error('Failed to start server', error)
-  process.exit(1)
-})
-
 process.on('SIGINT', async () => {
   await prisma.$disconnect()
   process.exit(0)
 })
+
+if (!process.env.VERCEL) {
+  bootstrap().catch((error) => {
+    console.error('Failed to start server', error)
+    process.exit(1)
+  })
+}
+
+export default app

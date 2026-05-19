@@ -4,13 +4,18 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
 async function main() {
-  const passwordHash = await bcrypt.hash('Admin@123', 12)
+  const passwordHash = await bcrypt.hash('admin123', 12)
   await prisma.user.upsert({
-    where: { email: 'admin@annapurna.local' },
-    update: {},
+    where: { email: 'admin@annapurna.com' },
+    update: {
+      full_name: 'Annapurna Admin',
+      mobile: '9999999999',
+      role: 'admin',
+      password: passwordHash
+    },
     create: {
       full_name: 'Annapurna Admin',
-      email: 'admin@annapurna.local',
+      email: 'admin@annapurna.com',
       mobile: '9999999999',
       role: 'admin',
       password: passwordHash

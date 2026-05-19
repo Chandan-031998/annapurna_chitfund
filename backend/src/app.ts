@@ -17,21 +17,25 @@ import { fail } from './utils/response'
 dotenv.config()
 
 const app = express()
-const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').filter(Boolean)
 
 app.use(helmet())
 app.use(cors({
-  origin(origin, callback) {
-    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
-      callback(null, true)
-      return
-    }
-    callback(new Error('Not allowed by CORS'))
-  },
+  origin: [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'https://annapurna-chitfund.vercel.app'
+  ],
   credentials: true
 }))
 app.use(express.json({ limit: '1mb' }))
 app.use(morgan('dev'))
+
+app.get('/', (_req, res) => {
+  res.json({
+    success: true,
+    message: 'Annapurna API running successfully'
+  })
+})
 
 app.get('/health', (_req, res) => {
   res.json({ success: true, message: 'Annapurna API running' })
@@ -47,10 +51,15 @@ app.use('/api/ledger', ledgerRoutes)
 app.use('/api/reports', reportRoutes)
 app.use('/api/notifications', notificationRoutes)
 
-app.use((_req, res) => fail(res, 404, 'API route not found'))
-
 app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
   return fail(res, 500, error.message || 'Internal server error')
+})
+
+app.use((_req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'API route not found'
+  })
 })
 
 export default app

@@ -2,8 +2,8 @@
   "name": "annapurna-backend",
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
-    "start": "node dist/server.js",
     "build": "tsc",
+    "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "seed": "ts-node prisma/seed.ts"

@@ -14,11 +14,14 @@ async function bootstrap() {
         console.log(`Annapurna API server running on http://localhost:${port}`);
     });
 }
-bootstrap().catch((error) => {
-    console.error('Failed to start server', error);
-    process.exit(1);
-});
 process.on('SIGINT', async () => {
     await db_1.prisma.$disconnect();
     process.exit(0);
 });
+if (!process.env.VERCEL) {
+    bootstrap().catch((error) => {
+        console.error('Failed to start server', error);
+        process.exit(1);
+    });
+}
+exports.default = app_1.default;

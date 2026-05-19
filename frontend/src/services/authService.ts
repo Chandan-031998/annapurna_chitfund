@@ -3,8 +3,7 @@ import { AuthResponse, AuthUser } from '../types/auth.types'
 
 export const authService = {
   async login(email: string, password: string) {
-    const response = await api.post<AuthResponse>('http://localhost:5000/api/auth/login', { email, password })
-    console.log(response.data)
+    const response = await api.post<AuthResponse>('/auth/login', { email, password })
     return response.data
   },
   async register(payload: { name: string; email: string; phone?: string; password: string; role: string }) {

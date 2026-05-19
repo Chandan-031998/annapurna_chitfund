@@ -9,11 +9,40 @@ interface AuthState {
   error: string | null
 }
 
-const storedUser = localStorage.getItem('annapurna_user')
+function clearAuthStorage() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+  clearLegacyAuthStorage()
+}
+
+function clearLegacyAuthStorage() {
+  localStorage.removeItem('annapurna_token')
+  localStorage.removeItem('annapurna_user')
+}
+
+function persistAuth(user: AuthUser, token: string) {
+  localStorage.setItem('token', token)
+  localStorage.setItem('user', JSON.stringify(user))
+  clearLegacyAuthStorage()
+}
+
+function readStoredUser() {
+  const storedUser = localStorage.getItem('user')
+  if (!storedUser) return null
+
+  try {
+    return JSON.parse(storedUser) as AuthUser
+  } catch {
+    clearAuthStorage()
+    return null
+  }
+}
+
+clearLegacyAuthStorage()
 
 const initialState: AuthState = {
-  user: storedUser ? JSON.parse(storedUser) : null,
-  token: localStorage.getItem('annapurna_token') || localStorage.getItem('token'),
+  user: readStoredUser(),
+  token: localStorage.getItem('token'),
   loading: false,
   error: null
 }
@@ -33,16 +62,12 @@ const authSlice = createSlice({
     logout(state) {
       state.user = null
       state.token = null
-      localStorage.removeItem('token')
-      localStorage.removeItem('annapurna_token')
-      localStorage.removeItem('annapurna_user')
+      clearAuthStorage()
     },
     setCredentials(state, action: PayloadAction<{ user: AuthUser; token: string }>) {
       state.user = action.payload.user
       state.token = action.payload.token
-      localStorage.setItem('token', action.payload.token)
-      localStorage.setItem('annapurna_token', action.payload.token)
-      localStorage.setItem('annapurna_user', JSON.stringify(action.payload.user))
+      persistAuth(action.payload.user, action.payload.token)
     }
   },
   extraReducers: (builder) => {
@@ -55,9 +80,7 @@ const authSlice = createSlice({
         state.loading = false
         state.user = action.payload.user
         state.token = action.payload.token
-        localStorage.setItem('token', action.payload.token)
-        localStorage.setItem('annapurna_token', action.payload.token)
-        localStorage.setItem('annapurna_user', JSON.stringify(action.payload.user))
+        persistAuth(action.payload.user, action.payload.token)
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.loading = false
@@ -66,9 +89,7 @@ const authSlice = createSlice({
       .addCase(registerUser.fulfilled, (state, action) => {
         state.user = action.payload.user
         state.token = action.payload.token
-        localStorage.setItem('token', action.payload.token)
-        localStorage.setItem('annapurna_token', action.payload.token)
-        localStorage.setItem('annapurna_user', JSON.stringify(action.payload.user))
+        persistAuth(action.payload.user, action.payload.token)
       })
   }
 })
