@@ -1,21 +1,72 @@
 import { Request, Response } from 'express'
-import { prisma } from '../config/db'
+import { RowDataPacket } from 'mysql2'
+import { pool } from '../config/db'
 import { ok } from '../utils/response'
+
+type CollectionReportRow = RowDataPacket & {
+  id: number
+  payment_month: string | null
+  payment_date: Date | string | null
+  amount: string | number
+  payment_status: string | null
+  member_id: number | null
+  member_name: string | null
+  member_mobile: string | null
+  member_code: string | null
+  member_status: string | null
+  group_id: number | null
+  group_name: string | null
+}
+
+type AuctionReportRow = RowDataPacket & {
+  auction_month: string | null
+  auction_date: Date | string | null
+  bid_amount: string | number | null
+  prize_amount: string | number | null
+}
+
+type ExpenseReportRow = RowDataPacket & {
+  category: string
+  amount: string | number
+}
+
+type LedgerReportRow = RowDataPacket & {
+  entry_type: string
+  amount: string | number | null
+}
 
 function collectionMonth(value: string | null) {
   const month = Number(String(value || '').split('-')[1])
   return month || new Date().getMonth() + 1
 }
 
+async function count(table: string, where = '') {
+  const [rows] = await pool.query<(RowDataPacket & { total: number })[]>(`SELECT COUNT(*) AS total FROM ${table} ${where}`)
+  return Number(rows[0]?.total || 0)
+}
+
 export async function getReports(_req: Request, res: Response) {
-  const [members, groups, collections, expenses, auctions, ledger] = await Promise.all([
-    prisma.member.count(),
-    prisma.chitGroup.count(),
-    prisma.collection.findMany({ include: { members: true, chit_groups: true, receipts: true } }),
-    prisma.expense.findMany(),
-    prisma.auction.findMany({ include: { chit_groups: true, members: true } }),
-    prisma.ledgerEntry.findMany()
+  const [members, groups, activeGroups, collectionsRows, expensesRows, auctionsRows, ledgerRows] = await Promise.all([
+    count('members'),
+    count('chit_groups'),
+    count('chit_groups', `WHERE status = 'active'`),
+    pool.query<CollectionReportRow[]>(
+      `SELECT c.*, m.id AS member_id, m.full_name AS member_name, m.mobile AS member_mobile, m.member_code, m.status AS member_status,
+              g.id AS group_id, g.group_name
+       FROM collections c
+       LEFT JOIN members m ON m.id = c.member_id
+       LEFT JOIN chit_groups g ON g.id = c.group_id
+       ORDER BY c.created_at DESC`
+    ),
+    pool.query<ExpenseReportRow[]>('SELECT category, amount FROM expenses'),
+    pool.query<AuctionReportRow[]>('SELECT auction_month, auction_date, bid_amount, prize_amount FROM auctions ORDER BY created_at DESC'),
+    pool.query<LedgerReportRow[]>('SELECT entry_type, amount FROM ledger_entries')
   ])
+
+  const collections = collectionsRows[0]
+  const expenses = expensesRows[0]
+  const auctions = auctionsRows[0]
+  const ledger = ledgerRows[0]
 
   const totalCollected = collections.filter((item) => item.payment_status === 'paid').reduce((sum, item) => sum + Number(item.amount), 0)
   const pendingAmount = collections.filter((item) => item.payment_status !== 'paid').reduce((sum, item) => sum + Number(item.amount), 0)
@@ -57,8 +108,8 @@ export async function getReports(_req: Request, res: Response) {
     amount: Number(item.amount),
     paidAmount: item.payment_status === 'paid' ? Number(item.amount) : 0,
     status: String(item.payment_status || 'pending').toUpperCase(),
-    member: { id: item.members.id, name: item.members.full_name, phone: item.members.mobile, memberCode: item.members.member_code, status: item.members.status },
-    group: { id: item.chit_groups.id, name: item.chit_groups.group_name }
+    member: { id: item.member_id, name: item.member_name, phone: item.member_mobile, memberCode: item.member_code, status: item.member_status },
+    group: { id: item.group_id, name: item.group_name }
   }))
 
   return ok(res, {
@@ -69,7 +120,7 @@ export async function getReports(_req: Request, res: Response) {
       pendingAmount,
       totalExpenses,
       totalAuctionValue,
-      activeGroups: await prisma.chitGroup.count({ where: { status: 'active' } }),
+      activeGroups,
       ledgerBalance: ledgerCredit - ledgerDebit,
       profit: totalCollected + ledgerCredit - totalExpenses - ledgerDebit
     },

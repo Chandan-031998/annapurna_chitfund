@@ -1,12 +1,22 @@
 import { Request, Response } from 'express'
-import { ledger_entries_entry_type } from '@prisma/client'
-import { prisma } from '../config/db'
+import { ResultSetHeader, RowDataPacket } from 'mysql2'
+import { pool } from '../config/db'
 import { created, fail, ok } from '../utils/response'
 
-function mapLedger(item: { id: number; entry_type: ledger_entries_entry_type; title: string | null; amount: unknown; entry_date: Date | null; description: string | null }) {
+type LedgerRow = RowDataPacket & {
+  id: number
+  entry_type: string
+  title: string | null
+  amount: string | number | null
+  entry_date: Date | string | null
+  description: string | null
+  created_at: Date | string
+}
+
+function mapLedger(item: LedgerRow) {
   return {
     id: item.id,
-    type: item.entry_type.toUpperCase(),
+    type: String(item.entry_type).toUpperCase(),
     title: item.title || '',
     amount: Number(item.amount || 0),
     entryDate: item.entry_date,
@@ -15,7 +25,7 @@ function mapLedger(item: { id: number; entry_type: ledger_entries_entry_type; ti
 }
 
 export async function listLedger(_req: Request, res: Response) {
-  const items = await prisma.ledgerEntry.findMany({ orderBy: { created_at: 'desc' } })
+  const [items] = await pool.query<LedgerRow[]>('SELECT * FROM ledger_entries ORDER BY created_at DESC')
   let runningBalance = 0
   const chronological = [...items].reverse().map((item) => {
     const mapped = mapLedger(item)
@@ -31,14 +41,11 @@ export async function createLedgerEntry(req: Request, res: Response) {
     return fail(res, 400, 'Type, title, amount and date are required')
   }
 
-  const entry = await prisma.ledgerEntry.create({
-    data: {
-      entry_type: String(type).toLowerCase() as ledger_entries_entry_type,
-      title,
-      amount,
-      entry_date: new Date(entryDate),
-      description: notes
-    }
-  })
-  return created(res, mapLedger(entry), 'Ledger entry created')
+  const [result] = await pool.execute<ResultSetHeader>(
+    `INSERT INTO ledger_entries (entry_type, title, amount, entry_date, description)
+     VALUES (?, ?, ?, ?, ?)`,
+    [String(type).toLowerCase(), title, amount, entryDate, notes || null]
+  )
+  const [rows] = await pool.query<LedgerRow[]>('SELECT * FROM ledger_entries WHERE id = ? LIMIT 1', [result.insertId])
+  return created(res, mapLedger(rows[0]), 'Ledger entry created')
 }

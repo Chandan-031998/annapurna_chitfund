@@ -7,7 +7,7 @@ const response_1 = require("../utils/response");
 function mapLedger(item) {
     return {
         id: item.id,
-        type: item.entry_type.toUpperCase(),
+        type: String(item.entry_type).toUpperCase(),
         title: item.title || '',
         amount: Number(item.amount || 0),
         entryDate: item.entry_date,
@@ -15,7 +15,7 @@ function mapLedger(item) {
     };
 }
 async function listLedger(_req, res) {
-    const items = await db_1.prisma.ledgerEntry.findMany({ orderBy: { created_at: 'desc' } });
+    const [items] = await db_1.pool.query('SELECT * FROM ledger_entries ORDER BY created_at DESC');
     let runningBalance = 0;
     const chronological = [...items].reverse().map((item) => {
         const mapped = mapLedger(item);
@@ -29,14 +29,8 @@ async function createLedgerEntry(req, res) {
     if (!type || !title || !amount || !entryDate) {
         return (0, response_1.fail)(res, 400, 'Type, title, amount and date are required');
     }
-    const entry = await db_1.prisma.ledgerEntry.create({
-        data: {
-            entry_type: String(type).toLowerCase(),
-            title,
-            amount,
-            entry_date: new Date(entryDate),
-            description: notes
-        }
-    });
-    return (0, response_1.created)(res, mapLedger(entry), 'Ledger entry created');
+    const [result] = await db_1.pool.execute(`INSERT INTO ledger_entries (entry_type, title, amount, entry_date, description)
+     VALUES (?, ?, ?, ?, ?)`, [String(type).toLowerCase(), title, amount, entryDate, notes || null]);
+    const [rows] = await db_1.pool.query('SELECT * FROM ledger_entries WHERE id = ? LIMIT 1', [result.insertId]);
+    return (0, response_1.created)(res, mapLedger(rows[0]), 'Ledger entry created');
 }

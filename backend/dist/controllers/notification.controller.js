@@ -16,19 +16,13 @@ function mapNotification(item) {
     };
 }
 async function listNotifications(_req, res) {
-    const items = await db_1.prisma.notifications.findMany({ orderBy: { created_at: 'desc' }, take: 50 });
+    const [items] = await db_1.pool.query('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50');
     return (0, response_1.ok)(res, items.map(mapNotification), 'Notifications loaded');
 }
 async function createPaymentReminder(req, res) {
     const { title = 'Payment reminder', message, sentTo, type = 'sms' } = req.body;
-    const notification = await db_1.prisma.notifications.create({
-        data: {
-            title,
-            message: message || 'Your chit fund monthly payment is pending. Please complete the payment.',
-            sent_to: sentTo || 'member',
-            notification_type: String(type).toLowerCase(),
-            status: 'pending'
-        }
-    });
-    return (0, response_1.created)(res, mapNotification(notification), 'Reminder queued');
+    const [result] = await db_1.pool.execute(`INSERT INTO notifications (title, message, sent_to, notification_type, status)
+     VALUES (?, ?, ?, ?, 'pending')`, [title, message || 'Your chit fund monthly payment is pending. Please complete the payment.', sentTo || 'member', String(type).toLowerCase()]);
+    const [rows] = await db_1.pool.query('SELECT * FROM notifications WHERE id = ? LIMIT 1', [result.insertId]);
+    return (0, response_1.created)(res, mapNotification(rows[0]), 'Reminder queued');
 }

@@ -7,15 +7,29 @@ function collectionMonth(value) {
     const month = Number(String(value || '').split('-')[1]);
     return month || new Date().getMonth() + 1;
 }
+async function count(table, where = '') {
+    const [rows] = await db_1.pool.query(`SELECT COUNT(*) AS total FROM ${table} ${where}`);
+    return Number(rows[0]?.total || 0);
+}
 async function getReports(_req, res) {
-    const [members, groups, collections, expenses, auctions, ledger] = await Promise.all([
-        db_1.prisma.member.count(),
-        db_1.prisma.chitGroup.count(),
-        db_1.prisma.collection.findMany({ include: { members: true, chit_groups: true, receipts: true } }),
-        db_1.prisma.expense.findMany(),
-        db_1.prisma.auction.findMany({ include: { chit_groups: true, members: true } }),
-        db_1.prisma.ledgerEntry.findMany()
+    const [members, groups, activeGroups, collectionsRows, expensesRows, auctionsRows, ledgerRows] = await Promise.all([
+        count('members'),
+        count('chit_groups'),
+        count('chit_groups', `WHERE status = 'active'`),
+        db_1.pool.query(`SELECT c.*, m.id AS member_id, m.full_name AS member_name, m.mobile AS member_mobile, m.member_code, m.status AS member_status,
+              g.id AS group_id, g.group_name
+       FROM collections c
+       LEFT JOIN members m ON m.id = c.member_id
+       LEFT JOIN chit_groups g ON g.id = c.group_id
+       ORDER BY c.created_at DESC`),
+        db_1.pool.query('SELECT category, amount FROM expenses'),
+        db_1.pool.query('SELECT auction_month, auction_date, bid_amount, prize_amount FROM auctions ORDER BY created_at DESC'),
+        db_1.pool.query('SELECT entry_type, amount FROM ledger_entries')
     ]);
+    const collections = collectionsRows[0];
+    const expenses = expensesRows[0];
+    const auctions = auctionsRows[0];
+    const ledger = ledgerRows[0];
     const totalCollected = collections.filter((item) => item.payment_status === 'paid').reduce((sum, item) => sum + Number(item.amount), 0);
     const pendingAmount = collections.filter((item) => item.payment_status !== 'paid').reduce((sum, item) => sum + Number(item.amount), 0);
     const totalExpenses = expenses.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -51,8 +65,8 @@ async function getReports(_req, res) {
         amount: Number(item.amount),
         paidAmount: item.payment_status === 'paid' ? Number(item.amount) : 0,
         status: String(item.payment_status || 'pending').toUpperCase(),
-        member: { id: item.members.id, name: item.members.full_name, phone: item.members.mobile, memberCode: item.members.member_code, status: item.members.status },
-        group: { id: item.chit_groups.id, name: item.chit_groups.group_name }
+        member: { id: item.member_id, name: item.member_name, phone: item.member_mobile, memberCode: item.member_code, status: item.member_status },
+        group: { id: item.group_id, name: item.group_name }
     }));
     return (0, response_1.ok)(res, {
         summary: {
@@ -62,7 +76,7 @@ async function getReports(_req, res) {
             pendingAmount,
             totalExpenses,
             totalAuctionValue,
-            activeGroups: await db_1.prisma.chitGroup.count({ where: { status: 'active' } }),
+            activeGroups,
             ledgerBalance: ledgerCredit - ledgerDebit,
             profit: totalCollected + ledgerCredit - totalExpenses - ledgerDebit
         },

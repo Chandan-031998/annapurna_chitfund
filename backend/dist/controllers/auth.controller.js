@@ -4,23 +4,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.profile = exports.login = exports.register = void 0;
-const dotenv_1 = __importDefault(require("dotenv"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
-const promise_1 = __importDefault(require("mysql2/promise"));
+const db_1 = require("../config/db");
 const jwt_1 = require("../utils/jwt");
-dotenv_1.default.config();
-const pool = process.env.DATABASE_URL
-    ? promise_1.default.createPool(process.env.DATABASE_URL)
-    : promise_1.default.createPool({
-        host: process.env.DB_HOST || 'localhost',
-        port: Number(process.env.DB_PORT || 3306),
-        user: process.env.DB_USER || 'root',
-        password: process.env.DB_PASSWORD || '',
-        database: process.env.DB_NAME || 'annapurna',
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0
-    });
 function normalizeRole(role) {
     const normalized = String(role || 'member').toLowerCase();
     if (['admin', 'collector', 'accountant', 'member'].includes(normalized)) {
@@ -48,9 +34,9 @@ const register = async (req, res) => {
             });
         }
         const passwordHash = await bcryptjs_1.default.hash(password, 12);
-        const [result] = await pool.execute('INSERT INTO users (full_name, email, mobile, password, role, address) VALUES (?, ?, ?, ?, ?, ?)', [displayName, email, displayMobile, passwordHash, normalizeRole(role), address || null]);
+        const [result] = await db_1.pool.execute('INSERT INTO users (full_name, email, mobile, password, role, address) VALUES (?, ?, ?, ?, ?, ?)', [displayName, email, displayMobile, passwordHash, normalizeRole(role), address || null]);
         const insertId = Number(result.insertId);
-        const [rows] = await pool.execute('SELECT * FROM users WHERE id = ? LIMIT 1', [insertId]);
+        const [rows] = await db_1.pool.execute('SELECT * FROM users WHERE id = ? LIMIT 1', [insertId]);
         const user = rows[0];
         const token = (0, jwt_1.signToken)({
             id: user.id,
@@ -82,7 +68,7 @@ const login = async (req, res) => {
                 message: 'Email and password are required'
             });
         }
-        const [rows] = await pool.execute('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
+        const [rows] = await db_1.pool.execute('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
         console.log('DB USER', rows);
         if (!rows.length) {
             return res.status(401).json({
@@ -128,7 +114,7 @@ const profile = async (req, res) => {
                 message: 'Authentication is required'
             });
         }
-        const [rows] = await pool.execute('SELECT * FROM users WHERE id = ? LIMIT 1', [req.user.id]);
+        const [rows] = await db_1.pool.execute('SELECT * FROM users WHERE id = ? LIMIT 1', [req.user.id]);
         const user = rows[0];
         if (!user) {
             return res.status(404).json({

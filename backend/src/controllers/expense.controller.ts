@@ -1,8 +1,19 @@
 import { Request, Response } from 'express'
-import { prisma } from '../config/db'
+import { ResultSetHeader, RowDataPacket } from 'mysql2'
+import { pool } from '../config/db'
 import { created, fail, ok } from '../utils/response'
 
-function mapExpense(item: { id: number; title: string; category: string; amount: unknown; expense_date: Date | null; payment_mode: unknown; remarks: string | null }) {
+type ExpenseRow = RowDataPacket & {
+  id: number
+  title: string
+  category: string
+  amount: string | number
+  expense_date: Date | string | null
+  payment_mode: string | null
+  remarks: string | null
+}
+
+function mapExpense(item: ExpenseRow) {
   return {
     id: item.id,
     title: item.title,
@@ -15,7 +26,7 @@ function mapExpense(item: { id: number; title: string; category: string; amount:
 }
 
 export async function listExpenses(_req: Request, res: Response) {
-  const items = await prisma.expense.findMany({ orderBy: { created_at: 'desc' } })
+  const [items] = await pool.query<ExpenseRow[]>('SELECT * FROM expenses ORDER BY created_at DESC')
   return ok(res, items.map(mapExpense), 'Expenses loaded')
 }
 
@@ -25,11 +36,16 @@ export async function createExpense(req: Request, res: Response) {
     return fail(res, 400, 'Title, amount and date are required')
   }
 
-  const expense = await prisma.expense.create({
-    data: { title, category: category || 'General', amount, expense_date: new Date(expenseDate), payment_mode: String(req.body.paymentMode || 'cash').toLowerCase() as any, remarks: notes }
-  })
-  await prisma.ledgerEntry.create({
-    data: { entry_type: 'debit', title: `Expense: ${title}`, amount, entry_date: new Date(expenseDate), description: notes }
-  })
-  return created(res, mapExpense(expense), 'Expense created')
+  const [result] = await pool.execute<ResultSetHeader>(
+    `INSERT INTO expenses (title, category, amount, expense_date, payment_mode, remarks)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [title, category || 'General', amount, expenseDate, String(req.body.paymentMode || 'cash').toLowerCase(), notes || null]
+  )
+  await pool.execute(
+    `INSERT INTO ledger_entries (entry_type, title, amount, entry_date, description)
+     VALUES ('debit', ?, ?, ?, ?)`,
+    [`Expense: ${title}`, amount, expenseDate, notes || null]
+  )
+  const [rows] = await pool.query<ExpenseRow[]>('SELECT * FROM expenses WHERE id = ? LIMIT 1', [result.insertId])
+  return created(res, mapExpense(rows[0]), 'Expense created')
 }

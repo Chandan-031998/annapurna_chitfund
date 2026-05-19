@@ -20,3 +20,15 @@ Includes:
 
 
 kill -9 $(lsof -t -i:5173)
+
+
+
+git commit -m "p1"
+
+
+git push -u origin main
+
+
+git add -A
+git commit -m "p1"
+git push origin main

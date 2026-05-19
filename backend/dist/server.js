@@ -9,13 +9,12 @@ const db_1 = require("./config/db");
 dotenv_1.default.config();
 const port = Number(process.env.PORT || 5000);
 async function bootstrap() {
-    await (0, db_1.connectDatabase)();
     app_1.default.listen(port, () => {
         console.log(`Annapurna API server running on http://localhost:${port}`);
     });
 }
 process.on('SIGINT', async () => {
-    await db_1.prisma.$disconnect();
+    await (0, db_1.closeDatabase)();
     process.exit(0);
 });
 if (!process.env.VERCEL) {

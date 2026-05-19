@@ -16,7 +16,7 @@ function mapExpense(item) {
     };
 }
 async function listExpenses(_req, res) {
-    const items = await db_1.prisma.expense.findMany({ orderBy: { created_at: 'desc' } });
+    const [items] = await db_1.pool.query('SELECT * FROM expenses ORDER BY created_at DESC');
     return (0, response_1.ok)(res, items.map(mapExpense), 'Expenses loaded');
 }
 async function createExpense(req, res) {
@@ -24,11 +24,10 @@ async function createExpense(req, res) {
     if (!title || !amount || !expenseDate) {
         return (0, response_1.fail)(res, 400, 'Title, amount and date are required');
     }
-    const expense = await db_1.prisma.expense.create({
-        data: { title, category: category || 'General', amount, expense_date: new Date(expenseDate), payment_mode: String(req.body.paymentMode || 'cash').toLowerCase(), remarks: notes }
-    });
-    await db_1.prisma.ledgerEntry.create({
-        data: { entry_type: 'debit', title: `Expense: ${title}`, amount, entry_date: new Date(expenseDate), description: notes }
-    });
-    return (0, response_1.created)(res, mapExpense(expense), 'Expense created');
+    const [result] = await db_1.pool.execute(`INSERT INTO expenses (title, category, amount, expense_date, payment_mode, remarks)
+     VALUES (?, ?, ?, ?, ?, ?)`, [title, category || 'General', amount, expenseDate, String(req.body.paymentMode || 'cash').toLowerCase(), notes || null]);
+    await db_1.pool.execute(`INSERT INTO ledger_entries (entry_type, title, amount, entry_date, description)
+     VALUES ('debit', ?, ?, ?, ?)`, [`Expense: ${title}`, amount, expenseDate, notes || null]);
+    const [rows] = await db_1.pool.query('SELECT * FROM expenses WHERE id = ? LIMIT 1', [result.insertId]);
+    return (0, response_1.created)(res, mapExpense(rows[0]), 'Expense created');
 }

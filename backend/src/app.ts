@@ -12,11 +12,13 @@ import expenseRoutes from './routes/expense.routes'
 import ledgerRoutes from './routes/ledger.routes'
 import reportRoutes from './routes/report.routes'
 import notificationRoutes from './routes/notification.routes'
+import { connectDatabase } from './config/db'
 import { fail } from './utils/response'
 
 dotenv.config()
 
 const app = express()
+const databaseReady = connectDatabase()
 
 app.use(helmet())
 app.use(cors({
@@ -29,6 +31,15 @@ app.use(cors({
 }))
 app.use(express.json({ limit: '1mb' }))
 app.use(morgan('dev'))
+
+app.use(async (_req, _res, next) => {
+  try {
+    await databaseReady
+    next()
+  } catch (error) {
+    next(error)
+  }
+})
 
 app.get('/', (_req, res) => {
   res.json({

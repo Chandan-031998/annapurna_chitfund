@@ -17,9 +17,11 @@ const expense_routes_1 = __importDefault(require("./routes/expense.routes"));
 const ledger_routes_1 = __importDefault(require("./routes/ledger.routes"));
 const report_routes_1 = __importDefault(require("./routes/report.routes"));
 const notification_routes_1 = __importDefault(require("./routes/notification.routes"));
+const db_1 = require("./config/db");
 const response_1 = require("./utils/response");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
+const databaseReady = (0, db_1.connectDatabase)();
 app.use((0, helmet_1.default)());
 app.use((0, cors_1.default)({
     origin: [
@@ -31,6 +33,15 @@ app.use((0, cors_1.default)({
 }));
 app.use(express_1.default.json({ limit: '1mb' }));
 app.use((0, morgan_1.default)('dev'));
+app.use(async (_req, _res, next) => {
+    try {
+        await databaseReady;
+        next();
+    }
+    catch (error) {
+        next(error);
+    }
+});
 app.get('/', (_req, res) => {
     res.json({
         success: true,

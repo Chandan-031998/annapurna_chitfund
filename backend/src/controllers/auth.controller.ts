@@ -1,10 +1,8 @@
 import { Request, Response } from 'express'
-import dotenv from 'dotenv'
 import bcrypt from 'bcryptjs'
-import mysql, { RowDataPacket } from 'mysql2/promise'
+import { RowDataPacket } from 'mysql2'
+import { pool } from '../config/db'
 import { signToken } from '../utils/jwt'
-
-dotenv.config()
 
 type DbUser = RowDataPacket & {
   id: number
@@ -15,19 +13,6 @@ type DbUser = RowDataPacket & {
   role: string
   address?: string | null
 }
-
-const pool = process.env.DATABASE_URL
-  ? mysql.createPool(process.env.DATABASE_URL)
-  : mysql.createPool({
-      host: process.env.DB_HOST || 'localhost',
-      port: Number(process.env.DB_PORT || 3306),
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-      database: process.env.DB_NAME || 'annapurna',
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0
-    })
 
 function normalizeRole(role?: string | null) {
   const normalized = String(role || 'member').toLowerCase()

@@ -1,8 +1,19 @@
 import { Request, Response } from 'express'
-import { prisma } from '../config/db'
+import { ResultSetHeader, RowDataPacket } from 'mysql2'
+import { pool } from '../config/db'
 import { created, ok } from '../utils/response'
 
-function mapNotification(item: { id: number; title: string | null; message: string | null; notification_type: unknown; sent_to: string | null; status: unknown; created_at: Date }) {
+type NotificationRow = RowDataPacket & {
+  id: number
+  title: string | null
+  message: string | null
+  notification_type: string | null
+  sent_to: string | null
+  status: string | null
+  created_at: Date | string
+}
+
+function mapNotification(item: NotificationRow) {
   return {
     id: item.id,
     title: item.title,
@@ -15,20 +26,17 @@ function mapNotification(item: { id: number; title: string | null; message: stri
 }
 
 export async function listNotifications(_req: Request, res: Response) {
-  const items = await prisma.notifications.findMany({ orderBy: { created_at: 'desc' }, take: 50 })
+  const [items] = await pool.query<NotificationRow[]>('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50')
   return ok(res, items.map(mapNotification), 'Notifications loaded')
 }
 
 export async function createPaymentReminder(req: Request, res: Response) {
   const { title = 'Payment reminder', message, sentTo, type = 'sms' } = req.body
-  const notification = await prisma.notifications.create({
-    data: {
-      title,
-      message: message || 'Your chit fund monthly payment is pending. Please complete the payment.',
-      sent_to: sentTo || 'member',
-      notification_type: String(type).toLowerCase() as any,
-      status: 'pending'
-    }
-  })
-  return created(res, mapNotification(notification), 'Reminder queued')
+  const [result] = await pool.execute<ResultSetHeader>(
+    `INSERT INTO notifications (title, message, sent_to, notification_type, status)
+     VALUES (?, ?, ?, ?, 'pending')`,
+    [title, message || 'Your chit fund monthly payment is pending. Please complete the payment.', sentTo || 'member', String(type).toLowerCase()]
+  )
+  const [rows] = await pool.query<NotificationRow[]>('SELECT * FROM notifications WHERE id = ? LIMIT 1', [result.insertId])
+  return created(res, mapNotification(rows[0]), 'Reminder queued')
 }

@@ -1,9 +1,24 @@
 import { Request, Response } from 'express'
-import { Prisma, members_status } from '@prisma/client'
-import { prisma } from '../config/db'
+import { ResultSetHeader, RowDataPacket } from 'mysql2'
+import { pool } from '../config/db'
 import { created, fail, ok } from '../utils/response'
 
-function mapMember(member: Prisma.MemberGetPayload<Record<string, never>>) {
+type MemberRow = RowDataPacket & {
+  id: number
+  member_code: string | null
+  full_name: string
+  email: string | null
+  mobile: string
+  address: string | null
+  aadhaar_number: string | null
+  photo: string | null
+  group_id: number | null
+  status: string | null
+  joining_date: Date | string | null
+  created_at: Date | string
+}
+
+function mapMember(member: MemberRow) {
   return {
     id: member.id,
     memberCode: member.member_code,
@@ -20,8 +35,13 @@ function mapMember(member: Prisma.MemberGetPayload<Record<string, never>>) {
   }
 }
 
+async function findMember(id: number) {
+  const [rows] = await pool.query<MemberRow[]>('SELECT * FROM members WHERE id = ? LIMIT 1', [id])
+  return rows[0]
+}
+
 export async function getMember(req: Request, res: Response) {
-  const member = await prisma.member.findUnique({ where: { id: Number(req.params.id) } })
+  const member = await findMember(Number(req.params.id))
   if (!member) return fail(res, 404, 'Member not found')
   return ok(res, mapMember(member), 'Member loaded')
 }
@@ -29,28 +49,27 @@ export async function getMember(req: Request, res: Response) {
 export async function listMembers(req: Request, res: Response) {
   const page = Math.max(Number(req.query.page || 1), 1)
   const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 100)
-  const search = String(req.query.search || '')
-  const where: Prisma.MemberWhereInput = search
-    ? {
-        OR: [
-          { full_name: { contains: search } },
-          { mobile: { contains: search } },
-          { member_code: { contains: search } },
-          { email: { contains: search } }
-        ]
-      }
-    : {}
+  const search = String(req.query.search || '').trim()
+  const offset = (page - 1) * limit
 
-  const [items, total] = await Promise.all([
-    prisma.member.findMany({
-      where,
-      skip: (page - 1) * limit,
-      take: limit,
-      orderBy: { created_at: 'desc' }
-    }),
-    prisma.member.count({ where })
-  ])
-  return ok(res, { items: items.map(mapMember), total, page, limit }, 'Members loaded')
+  const params: unknown[] = []
+  let where = ''
+  if (search) {
+    where = 'WHERE full_name LIKE ? OR mobile LIKE ? OR member_code LIKE ? OR email LIKE ?'
+    const pattern = `%${search}%`
+    params.push(pattern, pattern, pattern, pattern)
+  }
+
+  const [items] = await pool.query<MemberRow[]>(
+    `SELECT * FROM members ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    [...params, limit, offset]
+  )
+  const [countRows] = await pool.query<(RowDataPacket & { total: number })[]>(
+    `SELECT COUNT(*) AS total FROM members ${where}`,
+    params
+  )
+
+  return ok(res, { items: items.map(mapMember), total: Number(countRows[0]?.total || 0), page, limit }, 'Members loaded')
 }
 
 export async function createMember(req: Request, res: Response) {
@@ -59,43 +78,53 @@ export async function createMember(req: Request, res: Response) {
     return fail(res, 400, 'Member code, name and phone are required')
   }
 
-  const member = await prisma.member.create({
-    data: {
-      member_code: memberCode,
-      full_name: name,
-      email,
-      mobile: phone,
-      address,
-      aadhaar_number: aadhaarNumber,
-      photo,
-      group_id: groupId ? Number(groupId) : undefined,
-      status: String(status || 'active').toLowerCase() as members_status
-    }
-  })
+  const [result] = await pool.execute<ResultSetHeader>(
+    `INSERT INTO members (member_code, full_name, email, mobile, address, aadhaar_number, photo, group_id, status, joining_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
+    [
+      memberCode,
+      name,
+      email || null,
+      phone,
+      address || null,
+      aadhaarNumber || null,
+      photo || null,
+      groupId ? Number(groupId) : null,
+      String(status || 'active').toLowerCase()
+    ]
+  )
+  const member = await findMember(result.insertId)
   return created(res, mapMember(member), 'Member created')
 }
 
 export async function updateMember(req: Request, res: Response) {
   const id = Number(req.params.id)
   const { memberCode, name, email, phone, address, status, aadhaarNumber, photo, groupId } = req.body
-  const member = await prisma.member.update({
-    where: { id },
-    data: {
-      member_code: memberCode,
-      full_name: name,
-      email,
-      mobile: phone,
-      address,
-      aadhaar_number: aadhaarNumber,
-      photo,
-      group_id: groupId ? Number(groupId) : null,
-      status: status ? String(status).toLowerCase() as members_status : undefined
-    }
-  })
+
+  await pool.execute(
+    `UPDATE members
+     SET member_code = ?, full_name = ?, email = ?, mobile = ?, address = ?, aadhaar_number = ?, photo = ?, group_id = ?, status = ?
+     WHERE id = ?`,
+    [
+      memberCode,
+      name,
+      email || null,
+      phone,
+      address || null,
+      aadhaarNumber || null,
+      photo || null,
+      groupId ? Number(groupId) : null,
+      status ? String(status).toLowerCase() : 'active',
+      id
+    ]
+  )
+  const member = await findMember(id)
+  if (!member) return fail(res, 404, 'Member not found')
   return ok(res, mapMember(member), 'Member updated')
 }
 
 export async function deleteMember(req: Request, res: Response) {
-  await prisma.member.delete({ where: { id: Number(req.params.id) } })
-  return ok(res, { id: Number(req.params.id) }, 'Member deleted')
+  const id = Number(req.params.id)
+  await pool.execute('DELETE FROM members WHERE id = ?', [id])
+  return ok(res, { id }, 'Member deleted')
 }

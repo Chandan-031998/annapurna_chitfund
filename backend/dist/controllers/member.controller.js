@@ -23,8 +23,12 @@ function mapMember(member) {
         createdAt: member.created_at
     };
 }
+async function findMember(id) {
+    const [rows] = await db_1.pool.query('SELECT * FROM members WHERE id = ? LIMIT 1', [id]);
+    return rows[0];
+}
 async function getMember(req, res) {
-    const member = await db_1.prisma.member.findUnique({ where: { id: Number(req.params.id) } });
+    const member = await findMember(Number(req.params.id));
     if (!member)
         return (0, response_1.fail)(res, 404, 'Member not found');
     return (0, response_1.ok)(res, mapMember(member), 'Member loaded');
@@ -32,68 +36,63 @@ async function getMember(req, res) {
 async function listMembers(req, res) {
     const page = Math.max(Number(req.query.page || 1), 1);
     const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 100);
-    const search = String(req.query.search || '');
-    const where = search
-        ? {
-            OR: [
-                { full_name: { contains: search } },
-                { mobile: { contains: search } },
-                { member_code: { contains: search } },
-                { email: { contains: search } }
-            ]
-        }
-        : {};
-    const [items, total] = await Promise.all([
-        db_1.prisma.member.findMany({
-            where,
-            skip: (page - 1) * limit,
-            take: limit,
-            orderBy: { created_at: 'desc' }
-        }),
-        db_1.prisma.member.count({ where })
-    ]);
-    return (0, response_1.ok)(res, { items: items.map(mapMember), total, page, limit }, 'Members loaded');
+    const search = String(req.query.search || '').trim();
+    const offset = (page - 1) * limit;
+    const params = [];
+    let where = '';
+    if (search) {
+        where = 'WHERE full_name LIKE ? OR mobile LIKE ? OR member_code LIKE ? OR email LIKE ?';
+        const pattern = `%${search}%`;
+        params.push(pattern, pattern, pattern, pattern);
+    }
+    const [items] = await db_1.pool.query(`SELECT * FROM members ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+    const [countRows] = await db_1.pool.query(`SELECT COUNT(*) AS total FROM members ${where}`, params);
+    return (0, response_1.ok)(res, { items: items.map(mapMember), total: Number(countRows[0]?.total || 0), page, limit }, 'Members loaded');
 }
 async function createMember(req, res) {
     const { memberCode, name, email, phone, address, status, aadhaarNumber, photo, groupId } = req.body;
     if (!memberCode || !name || !phone) {
         return (0, response_1.fail)(res, 400, 'Member code, name and phone are required');
     }
-    const member = await db_1.prisma.member.create({
-        data: {
-            member_code: memberCode,
-            full_name: name,
-            email,
-            mobile: phone,
-            address,
-            aadhaar_number: aadhaarNumber,
-            photo,
-            group_id: groupId ? Number(groupId) : undefined,
-            status: String(status || 'active').toLowerCase()
-        }
-    });
+    const [result] = await db_1.pool.execute(`INSERT INTO members (member_code, full_name, email, mobile, address, aadhaar_number, photo, group_id, status, joining_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`, [
+        memberCode,
+        name,
+        email || null,
+        phone,
+        address || null,
+        aadhaarNumber || null,
+        photo || null,
+        groupId ? Number(groupId) : null,
+        String(status || 'active').toLowerCase()
+    ]);
+    const member = await findMember(result.insertId);
     return (0, response_1.created)(res, mapMember(member), 'Member created');
 }
 async function updateMember(req, res) {
     const id = Number(req.params.id);
     const { memberCode, name, email, phone, address, status, aadhaarNumber, photo, groupId } = req.body;
-    const member = await db_1.prisma.member.update({
-        where: { id },
-        data: {
-            member_code: memberCode,
-            full_name: name,
-            email,
-            mobile: phone,
-            address,
-            aadhaar_number: aadhaarNumber,
-            photo,
-            group_id: groupId ? Number(groupId) : null,
-            status: status ? String(status).toLowerCase() : undefined
-        }
-    });
+    await db_1.pool.execute(`UPDATE members
+     SET member_code = ?, full_name = ?, email = ?, mobile = ?, address = ?, aadhaar_number = ?, photo = ?, group_id = ?, status = ?
+     WHERE id = ?`, [
+        memberCode,
+        name,
+        email || null,
+        phone,
+        address || null,
+        aadhaarNumber || null,
+        photo || null,
+        groupId ? Number(groupId) : null,
+        status ? String(status).toLowerCase() : 'active',
+        id
+    ]);
+    const member = await findMember(id);
+    if (!member)
+        return (0, response_1.fail)(res, 404, 'Member not found');
     return (0, response_1.ok)(res, mapMember(member), 'Member updated');
 }
 async function deleteMember(req, res) {
-    await db_1.prisma.member.delete({ where: { id: Number(req.params.id) } });
-    return (0, response_1.ok)(res, { id: Number(req.params.id) }, 'Member deleted');
+    const id = Number(req.params.id);
+    await db_1.pool.execute('DELETE FROM members WHERE id = ?', [id]);
+    return (0, response_1.ok)(res, { id }, 'Member deleted');
 }
