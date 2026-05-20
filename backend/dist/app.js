@@ -22,13 +22,18 @@ const response_1 = require("./utils/response");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const databaseReady = (0, db_1.connectDatabase)();
+const allowedOrigins = process.env.CORS_ORIGIN?.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean) ?? [];
 app.use((0, helmet_1.default)());
 app.use((0, cors_1.default)({
-    origin: [
-        'http://localhost:5173',
-        'http://127.0.0.1:5173',
-        'https://annapurna-chitfund.vercel.app'
-    ],
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+            return;
+        }
+        callback(new Error('Not allowed by CORS'));
+    },
     credentials: true
 }));
 app.use(express_1.default.json({ limit: '1mb' }));
