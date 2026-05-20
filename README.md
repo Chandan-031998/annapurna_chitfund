@@ -16,7 +16,8 @@ Includes:
 - Reports
 - Ledger
 
-
+admin@annapurna.com
+admin123
 
 
 kill -9 $(lsof -t -i:5173)
@@ -30,5 +31,5 @@ git push -u origin main
 
 
 git add -A
-git commit -m "p1"
+git commit -m "p2"
 git push origin main
