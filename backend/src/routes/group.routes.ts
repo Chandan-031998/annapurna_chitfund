@@ -4,10 +4,10 @@ import { authenticate, authorize } from '../middlewares/auth.middleware'
 
 const router = Router()
 
-router.get('/', authenticate, listGroups)
-router.get('/:id', authenticate, getGroup)
-router.post('/', authenticate, authorize('ADMIN', 'ACCOUNTANT'), createGroup)
-router.put('/:id', authenticate, authorize('ADMIN', 'ACCOUNTANT'), updateGroup)
+router.get('/', authenticate, authorize('ADMIN'), listGroups)
+router.get('/:id', authenticate, authorize('ADMIN'), getGroup)
+router.post('/', authenticate, authorize('ADMIN'), createGroup)
+router.put('/:id', authenticate, authorize('ADMIN'), updateGroup)
 router.delete('/:id', authenticate, authorize('ADMIN'), deleteGroup)
 
 export default router

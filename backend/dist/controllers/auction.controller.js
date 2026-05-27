@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.listAuctions = listAuctions;
 exports.createAuction = createAuction;
 const db_1 = require("../config/db");
+const activity_service_1 = require("../services/activity.service");
 const response_1 = require("../utils/response");
 function mapAuction(item) {
     return {
@@ -46,6 +47,7 @@ async function createAuction(req, res) {
         finalPrize,
         `${winnerName || ''}${notes ? ` - ${notes}` : ''}`
     ]);
+    await (0, activity_service_1.logRequestActivity)(req, 'auction_created', `Auction created for group ${groupId}`, 'auction', result.insertId);
     const [rows] = await auctionRows('WHERE a.id = ?', [result.insertId]);
     return (0, response_1.created)(res, { ...mapAuction(rows[0]), winnerName: winnerName || rows[0]?.winner_name }, 'Auction created');
 }

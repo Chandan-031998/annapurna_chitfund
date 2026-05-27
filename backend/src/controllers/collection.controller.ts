@@ -1,6 +1,8 @@
 import { Request, Response } from 'express'
 import { ResultSetHeader, RowDataPacket } from 'mysql2'
 import { pool } from '../config/db'
+import { logRequestActivity } from '../services/activity.service'
+import { notifyMemberPaymentCollected } from '../services/notification.service'
 import { created, fail, ok } from '../utils/response'
 
 type CollectionRow = RowDataPacket & {
@@ -27,14 +29,20 @@ function collectionMonth(value: string | null) {
   return month || new Date().getMonth() + 1
 }
 
+function collectionYear(value: string | null, fallback: Date | string | null) {
+  const year = Number(String(value || '').split('-')[0])
+  return year || (fallback ? new Date(fallback).getFullYear() : new Date().getFullYear())
+}
+
 function mapCollection(item: CollectionRow) {
   return {
     id: item.id,
     month: collectionMonth(item.payment_month),
-    year: item.payment_date ? new Date(item.payment_date).getFullYear() : new Date().getFullYear(),
+    year: collectionYear(item.payment_month, item.payment_date),
     amount: Number(item.amount),
     paidAmount: item.payment_status === 'paid' ? Number(item.amount) : 0,
     status: String(item.payment_status || 'pending').toUpperCase(),
+    paymentDate: item.payment_date,
     paymentMode: item.payment_mode,
     receiptNo: item.receipt_number,
     notes: item.remarks,
@@ -71,6 +79,7 @@ export async function createCollection(req: Request, res: Response) {
   }
 
   const status = Number(paidAmount) >= Number(amount) ? 'paid' : Number(paidAmount) > 0 ? 'partial' : 'pending'
+  const paymentDate = Number(paidAmount) > 0 ? new Date() : null
   const [result] = await pool.execute<ResultSetHeader>(
     `INSERT INTO collections (member_id, group_id, amount, payment_month, payment_date, payment_mode, payment_status, remarks)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -79,7 +88,7 @@ export async function createCollection(req: Request, res: Response) {
       Number(groupId),
       amount,
       `${year}-${String(month).padStart(2, '0')}`,
-      Number(paidAmount) > 0 ? new Date() : null,
+      paymentDate,
       String(paymentMode).toLowerCase(),
       status,
       notes || null
@@ -97,6 +106,61 @@ export async function createCollection(req: Request, res: Response) {
     [`Collection ${receiptNo || `${year}-${month}`}`, paidAmount || amount, `Collection from ${memberRows[0]?.full_name || 'member'}`]
   )
 
+  if (paymentDate) {
+    await notifyMemberPaymentCollected(Number(memberId), Number(groupId), paidAmount || amount, paymentDate)
+  }
+  await logRequestActivity(req, 'payment_collected', `Payment ${receiptNo || `${year}-${month}`} recorded`, 'collection', result.insertId)
+
   const [rows] = await collectionQuery('WHERE c.id = ?', [result.insertId])
   return created(res, mapCollection(rows[0]), 'Collection recorded')
+}
+
+export async function updateCollection(req: Request, res: Response) {
+  const id = Number(req.params.id)
+  const { memberId, groupId, month, year, amount, paidAmount = 0, receiptNo, notes, paymentMode = 'cash' } = req.body
+  if (!memberId || !groupId || !month || !year || !amount) {
+    return fail(res, 400, 'Member, group, month, year and amount are required')
+  }
+
+  const [existingRows] = await collectionQuery('WHERE c.id = ?', [id])
+  if (!existingRows[0]) return fail(res, 404, 'Collection not found')
+
+  const status = Number(paidAmount) >= Number(amount) ? 'paid' : Number(paidAmount) > 0 ? 'partial' : 'pending'
+  const paymentDate = Number(paidAmount) > 0 ? existingRows[0].payment_date || new Date() : null
+
+  await pool.execute(
+    `UPDATE collections
+     SET member_id = ?, group_id = ?, amount = ?, payment_month = ?, payment_date = ?, payment_mode = ?, payment_status = ?, remarks = ?
+     WHERE id = ?`,
+    [
+      Number(memberId),
+      Number(groupId),
+      amount,
+      `${year}-${String(month).padStart(2, '0')}`,
+      paymentDate,
+      String(paymentMode).toLowerCase(),
+      status,
+      notes || null,
+      id
+    ]
+  )
+
+  await pool.execute('DELETE FROM receipts WHERE collection_id = ?', [id])
+  if (receiptNo) {
+    await pool.execute('INSERT INTO receipts (receipt_number, collection_id) VALUES (?, ?)', [receiptNo, id])
+  }
+  await logRequestActivity(req, 'payment_updated', `Payment ${receiptNo || `${year}-${month}`} updated`, 'collection', id)
+
+  const [rows] = await collectionQuery('WHERE c.id = ?', [id])
+  return ok(res, mapCollection(rows[0]), 'Collection updated')
+}
+
+export async function deleteCollection(req: Request, res: Response) {
+  const id = Number(req.params.id)
+  const [existingRows] = await collectionQuery('WHERE c.id = ?', [id])
+  if (!existingRows[0]) return fail(res, 404, 'Collection not found')
+
+  await pool.execute('DELETE FROM collections WHERE id = ?', [id])
+  await logRequestActivity(req, 'payment_deleted', `Payment ${existingRows[0].receipt_number || id} deleted`, 'collection', id)
+  return ok(res, { id }, 'Collection deleted')
 }

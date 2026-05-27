@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { ResultSetHeader, RowDataPacket } from 'mysql2'
 import { pool } from '../config/db'
+import { logRequestActivity } from '../services/activity.service'
 import { created, fail, ok } from '../utils/response'
 
 type ExpenseRow = RowDataPacket & {
@@ -46,6 +47,7 @@ export async function createExpense(req: Request, res: Response) {
      VALUES ('debit', ?, ?, ?, ?)`,
     [`Expense: ${title}`, amount, expenseDate, notes || null]
   )
+  await logRequestActivity(req, 'expense_added', `Expense ${title} added`, 'expense', result.insertId)
   const [rows] = await pool.query<ExpenseRow[]>('SELECT * FROM expenses WHERE id = ? LIMIT 1', [result.insertId])
   return created(res, mapExpense(rows[0]), 'Expense created')
 }

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { RowDataPacket } from 'mysql2'
 import { pool } from '../config/db'
+import { logRequestActivity } from '../services/activity.service'
 import { ok } from '../utils/response'
 
 type CollectionReportRow = RowDataPacket & {
@@ -19,6 +20,9 @@ type CollectionReportRow = RowDataPacket & {
 }
 
 type AuctionReportRow = RowDataPacket & {
+  id: number
+  group_id: number | null
+  group_name: string | null
   auction_month: string | null
   auction_date: Date | string | null
   bid_amount: string | number | null
@@ -35,6 +39,14 @@ type LedgerReportRow = RowDataPacket & {
   amount: string | number | null
 }
 
+type ActivityLogRow = RowDataPacket & {
+  id: number
+  action: string
+  description: string | null
+  role: string | null
+  created_at: Date | string
+}
+
 function collectionMonth(value: string | null) {
   const month = Number(String(value || '').split('-')[1])
   return month || new Date().getMonth() + 1
@@ -46,7 +58,7 @@ async function count(table: string, where = '') {
 }
 
 export async function getReports(_req: Request, res: Response) {
-  const [members, groups, activeGroups, collectionsRows, expensesRows, auctionsRows, ledgerRows] = await Promise.all([
+  const [members, groups, activeGroups, collectionsRows, expensesRows, auctionsRows, ledgerRows, activityRows] = await Promise.all([
     count('members'),
     count('chit_groups'),
     count('chit_groups', `WHERE status = 'active'`),
@@ -59,14 +71,21 @@ export async function getReports(_req: Request, res: Response) {
        ORDER BY c.created_at DESC`
     ),
     pool.query<ExpenseReportRow[]>('SELECT category, amount FROM expenses'),
-    pool.query<AuctionReportRow[]>('SELECT auction_month, auction_date, bid_amount, prize_amount FROM auctions ORDER BY created_at DESC'),
-    pool.query<LedgerReportRow[]>('SELECT entry_type, amount FROM ledger_entries')
+    pool.query<AuctionReportRow[]>(
+      `SELECT a.id, a.group_id, g.group_name, a.auction_month, a.auction_date, a.bid_amount, a.prize_amount
+       FROM auctions a
+       LEFT JOIN chit_groups g ON g.id = a.group_id
+       ORDER BY a.created_at DESC`
+    ),
+    pool.query<LedgerReportRow[]>('SELECT entry_type, amount FROM ledger_entries'),
+    pool.query<ActivityLogRow[]>('SELECT id, action, description, role, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 10')
   ])
 
   const collections = collectionsRows[0]
   const expenses = expensesRows[0]
   const auctions = auctionsRows[0]
   const ledger = ledgerRows[0]
+  const activity = activityRows[0]
 
   const totalCollected = collections.filter((item) => item.payment_status === 'paid').reduce((sum, item) => sum + Number(item.amount), 0)
   const pendingAmount = collections.filter((item) => item.payment_status !== 'paid').reduce((sum, item) => sum + Number(item.amount), 0)
@@ -81,7 +100,7 @@ export async function getReports(_req: Request, res: Response) {
     return {
       month,
       paid: monthItems.filter((item) => item.payment_status === 'paid').reduce((sum, item) => sum + Number(item.amount), 0),
-      due: monthItems.reduce((sum, item) => sum + Number(item.amount), 0)
+      due: monthItems.filter((item) => item.payment_status !== 'paid').reduce((sum, item) => sum + Number(item.amount), 0)
     }
   })
 
@@ -111,12 +130,30 @@ export async function getReports(_req: Request, res: Response) {
     member: { id: item.member_id, name: item.member_name, phone: item.member_mobile, memberCode: item.member_code, status: item.member_status },
     group: { id: item.group_id, name: item.group_name }
   }))
+  const dueRecords = mappedCollections.filter((item) => item.status !== 'PAID')
+  const currentMonth = new Date().getMonth() + 1
+  const monthlyCollected = monthlyCollections.find((item) => item.month === currentMonth)?.paid || 0
+  const upcomingAuction = auctions
+    .filter((item) => item.auction_date && new Date(item.auction_date) >= new Date(new Date().toDateString()))
+    .sort((a, b) => new Date(a.auction_date || 0).getTime() - new Date(b.auction_date || 0).getTime())[0]
+
+  const sumBy = (items: typeof dueRecords, keyFor: (item: typeof dueRecords[number]) => string) => {
+    const totals = items.reduce<Record<string, { name: string; amount: number; count: number }>>((acc, item) => {
+      const name = keyFor(item) || 'Unassigned'
+      acc[name] = acc[name] || { name, amount: 0, count: 0 }
+      acc[name].amount += Number(item.amount || 0)
+      acc[name].count += 1
+      return acc
+    }, {})
+    return Object.values(totals)
+  }
 
   return ok(res, {
     summary: {
       members,
       groups,
       totalCollected,
+      monthlyCollected,
       pendingAmount,
       totalExpenses,
       totalAuctionValue,
@@ -128,7 +165,36 @@ export async function getReports(_req: Request, res: Response) {
     auctionTrends,
     paymentStatus,
     expenseByCategory: Object.entries(expenseByCategory).map(([category, amount]) => ({ category, amount })),
-    pendingPayments: mappedCollections.filter((item) => item.status !== 'PAID').slice(0, 10),
-    recentCollections: mappedCollections.slice(0, 10)
+    pendingPayments: dueRecords.slice(0, 10),
+    recentCollections: mappedCollections.slice(0, 10),
+    dueTracking: {
+      records: dueRecords,
+      monthWise: sumBy(dueRecords, (item) => `${item.year}-${String(item.month).padStart(2, '0')}`),
+      memberWise: sumBy(dueRecords, (item) => item.member?.name || 'Unknown member'),
+      chitWise: sumBy(dueRecords, (item) => item.group?.name || 'Unknown chit')
+    },
+    upcomingAuction: upcomingAuction ? {
+      id: upcomingAuction.id,
+      groupId: upcomingAuction.group_id,
+      groupName: upcomingAuction.group_name,
+      auctionMonth: upcomingAuction.auction_month,
+      auctionDate: upcomingAuction.auction_date,
+      bidAmount: Number(upcomingAuction.bid_amount || 0),
+      prizeAmount: Number(upcomingAuction.prize_amount || 0)
+    } : null,
+    recentActivity: activity.map((item) => ({
+      id: item.id,
+      action: item.action,
+      description: item.description,
+      role: item.role,
+      createdAt: item.created_at
+    }))
   }, 'Reports loaded')
+}
+
+export async function logReportExport(req: Request, res: Response) {
+  const reportType = String(req.body.reportType || 'report')
+  const format = String(req.body.format || 'file').toUpperCase()
+  await logRequestActivity(req, 'report_exported', `${reportType} exported as ${format}`, 'report')
+  return ok(res, { reportType, format }, 'Report export logged')
 }

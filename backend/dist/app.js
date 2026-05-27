@@ -17,6 +17,7 @@ const expense_routes_1 = __importDefault(require("./routes/expense.routes"));
 const ledger_routes_1 = __importDefault(require("./routes/ledger.routes"));
 const report_routes_1 = __importDefault(require("./routes/report.routes"));
 const notification_routes_1 = __importDefault(require("./routes/notification.routes"));
+const member_portal_routes_1 = __importDefault(require("./routes/member_portal.routes"));
 const db_1 = require("./config/db");
 const response_1 = require("./utils/response");
 dotenv_1.default.config();
@@ -57,6 +58,7 @@ app.get('/health', (_req, res) => {
     res.json({ success: true, message: 'Annapurna API running' });
 });
 app.use('/api/auth', auth_routes_1.default);
+app.use('/api/member', member_portal_routes_1.default);
 app.use('/api/members', member_routes_1.default);
 app.use('/api/groups', group_routes_1.default);
 app.use('/api/collections', collection_routes_1.default);

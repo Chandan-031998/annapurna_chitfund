@@ -4,7 +4,7 @@ import { authenticate, authorize } from '../middlewares/auth.middleware'
 
 const router = Router()
 
-router.get('/', authenticate, listLedger)
-router.post('/', authenticate, authorize('ADMIN', 'ACCOUNTANT'), createLedgerEntry)
+router.get('/', authenticate, authorize('ADMIN'), listLedger)
+router.post('/', authenticate, authorize('ADMIN'), createLedgerEntry)
 
 export default router

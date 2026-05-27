@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { ResultSetHeader, RowDataPacket } from 'mysql2'
 import { pool } from '../config/db'
+import { logRequestActivity } from '../services/activity.service'
 import { created, fail, ok } from '../utils/response'
 
 type AuctionRow = RowDataPacket & {
@@ -67,6 +68,7 @@ export async function createAuction(req: Request, res: Response) {
       `${winnerName || ''}${notes ? ` - ${notes}` : ''}`
     ]
   )
+  await logRequestActivity(req, 'auction_created', `Auction created for group ${groupId}`, 'auction', result.insertId)
   const [rows] = await auctionRows('WHERE a.id = ?', [result.insertId])
   return created(res, { ...mapAuction(rows[0]), winnerName: winnerName || rows[0]?.winner_name }, 'Auction created')
 }

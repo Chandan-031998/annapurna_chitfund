@@ -7,6 +7,8 @@ const response_1 = require("../utils/response");
 function mapNotification(item) {
     return {
         id: item.id,
+        userId: item.user_id,
+        memberId: item.member_id,
         title: item.title,
         message: item.message,
         type: item.notification_type,
@@ -15,8 +17,15 @@ function mapNotification(item) {
         createdAt: item.created_at
     };
 }
-async function listNotifications(_req, res) {
-    const [items] = await db_1.pool.query('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50');
+async function listNotifications(req, res) {
+    const isMember = req.user?.role === 'MEMBER';
+    const [items] = isMember
+        ? await db_1.pool.query(`SELECT *
+       FROM notifications
+       WHERE user_id = ? OR sent_to = ?
+       ORDER BY created_at DESC
+       LIMIT 50`, [req.user?.id, req.user?.email])
+        : await db_1.pool.query('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50');
     return (0, response_1.ok)(res, items.map(mapNotification), 'Notifications loaded');
 }
 async function createPaymentReminder(req, res) {

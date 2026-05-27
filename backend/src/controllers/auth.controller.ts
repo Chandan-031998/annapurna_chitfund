@@ -1,7 +1,8 @@
 import { Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
-import { RowDataPacket } from 'mysql2'
+import { ResultSetHeader, RowDataPacket } from 'mysql2'
 import { pool } from '../config/db'
+import { logActivity } from '../services/activity.service'
 import { signToken } from '../utils/jwt'
 
 type DbUser = RowDataPacket & {
@@ -16,7 +17,7 @@ type DbUser = RowDataPacket & {
 
 function normalizeRole(role?: string | null) {
   const normalized = String(role || 'member').toLowerCase()
-  if (['admin', 'collector', 'accountant', 'member'].includes(normalized)) {
+  if (['admin', 'member'].includes(normalized)) {
     return normalized
   }
   return 'member'
@@ -29,6 +30,29 @@ function toFrontendUser(user: DbUser) {
     phone: user.mobile,
     role: normalizeRole(user.role).toUpperCase()
   }
+}
+
+async function ensureRegisteredMemberProfile(user: DbUser) {
+  if (normalizeRole(user.role) !== 'member') return
+
+  const [existing] = await pool.query<(RowDataPacket & { id: number })[]>(
+    'SELECT id FROM members WHERE mobile = ? OR email = ? LIMIT 1',
+    [user.mobile, user.email]
+  )
+
+  if (existing[0]) return
+
+  const [result] = await pool.execute<ResultSetHeader>(
+    `INSERT INTO members (member_code, full_name, email, mobile, address, status, joining_date)
+     VALUES (?, ?, ?, ?, ?, 'active', CURDATE())`,
+    [`MEM-${Date.now().toString().slice(-6)}`, user.full_name, user.email, user.mobile, user.address || null]
+  )
+
+  await pool.execute(
+    `INSERT INTO notifications (user_id, member_id, title, message, sent_to, notification_type, status)
+     VALUES (?, ?, 'Member profile created', 'Your Annapurna chit fund member profile has been created.', ?, 'push', 'sent')`,
+    [user.id, result.insertId, user.email || user.mobile]
+  )
 }
 
 export const register = async (req: Request, res: Response) => {
@@ -53,6 +77,16 @@ export const register = async (req: Request, res: Response) => {
     const insertId = Number((result as { insertId?: number }).insertId)
     const [rows] = await pool.execute<DbUser[]>('SELECT * FROM users WHERE id = ? LIMIT 1', [insertId])
     const user = rows[0]
+    await ensureRegisteredMemberProfile(user)
+    await logActivity({
+      userId: user.id,
+      role: user.role,
+      action: 'login',
+      description: `${user.full_name} logged in`,
+      entityType: 'user',
+      entityId: user.id,
+      ipAddress: req.ip
+    })
 
     const token = signToken({
       id: user.id,
@@ -76,8 +110,6 @@ export const register = async (req: Request, res: Response) => {
 
 export const login = async (req: Request, res: Response) => {
   try {
-    console.log('LOGIN REQUEST', req.body)
-
     const { email, password } = req.body
 
     if (!email || !password) {
@@ -88,8 +120,6 @@ export const login = async (req: Request, res: Response) => {
     }
 
     const [rows] = await pool.execute<DbUser[]>('SELECT * FROM users WHERE email = ? LIMIT 1', [email])
-
-    console.log('DB USER', rows)
 
     if (!rows.length) {
       return res.status(401).json({
@@ -110,6 +140,8 @@ export const login = async (req: Request, res: Response) => {
         message: 'Invalid password'
       })
     }
+
+    await ensureRegisteredMemberProfile(user)
 
     const token = signToken({
       id: user.id,

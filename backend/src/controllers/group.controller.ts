@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { ResultSetHeader, RowDataPacket } from 'mysql2'
 import { pool } from '../config/db'
+import { notifyMemberJoinedChit } from '../services/notification.service'
 import { created, fail, ok } from '../utils/response'
 
 type GroupRow = RowDataPacket & {
@@ -20,6 +21,10 @@ type GroupMemberRow = RowDataPacket & {
   mobile: string
 }
 
+async function notifyMembersJoinedGroup(memberIds: number[], groupId: number) {
+  await Promise.all(memberIds.map((memberId) => notifyMemberJoinedChit(memberId, groupId)))
+}
+
 function mapGroup(group: GroupRow, members: GroupMemberRow[] = []) {
   return {
     id: group.id,
@@ -37,7 +42,14 @@ function mapGroup(group: GroupRow, members: GroupMemberRow[] = []) {
 async function findGroup(id: number) {
   const [groups] = await pool.query<GroupRow[]>('SELECT * FROM chit_groups WHERE id = ? LIMIT 1', [id])
   if (!groups[0]) return null
-  const [members] = await pool.query<GroupMemberRow[]>('SELECT id, full_name, mobile FROM members WHERE group_id = ? ORDER BY full_name', [id])
+  const [members] = await pool.query<GroupMemberRow[]>(
+    `SELECT DISTINCT m.id, m.full_name, m.mobile
+     FROM members m
+     LEFT JOIN member_chits mc ON mc.member_id = m.id AND mc.chit_group_id = ?
+     WHERE mc.id IS NOT NULL OR m.group_id = ?
+     ORDER BY m.full_name`,
+    [id, id]
+  )
   return mapGroup(groups[0], members)
 }
 
@@ -66,7 +78,16 @@ export async function createGroup(req: Request, res: Response) {
   )
 
   if (Array.isArray(memberIds) && memberIds.length) {
-    await pool.query(`UPDATE members SET group_id = ? WHERE id IN (${memberIds.map(() => '?').join(',')})`, [result.insertId, ...memberIds.map(Number)])
+    const ids = [...new Set(memberIds.map(Number).filter((memberId) => Number.isInteger(memberId) && memberId > 0))]
+    if (ids.length) {
+      await pool.query(
+        `INSERT IGNORE INTO member_chits (member_id, chit_group_id, join_date)
+         VALUES ${ids.map(() => '(?, ?, CURDATE())').join(', ')}`,
+        ids.flatMap((memberId) => [memberId, result.insertId])
+      )
+      await pool.query(`UPDATE members SET group_id = ? WHERE group_id IS NULL AND id IN (${ids.map(() => '?').join(',')})`, [result.insertId, ...ids])
+      await notifyMembersJoinedGroup(ids, result.insertId)
+    }
   }
 
   const group = await findGroup(result.insertId)
@@ -98,9 +119,31 @@ export async function updateGroup(req: Request, res: Response) {
   )
 
   if (Array.isArray(memberIds)) {
-    await pool.execute('UPDATE members SET group_id = NULL WHERE group_id = ?', [id])
-    if (memberIds.length) {
-      await pool.query(`UPDATE members SET group_id = ? WHERE id IN (${memberIds.map(() => '?').join(',')})`, [id, ...memberIds.map(Number)])
+    const ids = [...new Set(memberIds.map(Number).filter((memberId) => Number.isInteger(memberId) && memberId > 0))]
+    const [existingRows] = await pool.query<(RowDataPacket & { member_id: number })[]>('SELECT member_id FROM member_chits WHERE chit_group_id = ?', [id])
+    const existingIds = existingRows.map((row) => row.member_id)
+    const addedIds = ids.filter((memberId) => !existingIds.includes(memberId))
+    await pool.execute('DELETE FROM member_chits WHERE chit_group_id = ?', [id])
+    await pool.execute(
+      `UPDATE members m
+       SET group_id = (
+         SELECT mc.chit_group_id
+         FROM member_chits mc
+         WHERE mc.member_id = m.id
+         ORDER BY mc.id
+         LIMIT 1
+       )
+       WHERE m.group_id = ?`,
+      [id]
+    )
+    if (ids.length) {
+      await pool.query(
+        `INSERT IGNORE INTO member_chits (member_id, chit_group_id, join_date)
+         VALUES ${ids.map(() => '(?, ?, CURDATE())').join(', ')}`,
+        ids.flatMap((memberId) => [memberId, id])
+      )
+      await pool.query(`UPDATE members SET group_id = ? WHERE group_id IS NULL AND id IN (${ids.map(() => '?').join(',')})`, [id, ...ids])
+      await notifyMembersJoinedGroup(addedIds, id)
     }
   }
 
@@ -111,7 +154,19 @@ export async function updateGroup(req: Request, res: Response) {
 
 export async function deleteGroup(req: Request, res: Response) {
   const id = Number(req.params.id)
-  await pool.execute('UPDATE members SET group_id = NULL WHERE group_id = ?', [id])
+  await pool.execute('DELETE FROM member_chits WHERE chit_group_id = ?', [id])
+  await pool.execute(
+    `UPDATE members m
+     SET group_id = (
+       SELECT mc.chit_group_id
+       FROM member_chits mc
+       WHERE mc.member_id = m.id
+       ORDER BY mc.id
+       LIMIT 1
+     )
+     WHERE m.group_id = ?`,
+    [id]
+  )
   await pool.execute('DELETE FROM chit_groups WHERE id = ?', [id])
   return ok(res, { id }, 'Group deleted')
 }

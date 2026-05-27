@@ -1,5 +1,6 @@
 import dotenv from 'dotenv'
 import mysql from 'mysql2/promise'
+import { RowDataPacket } from 'mysql2'
 
 dotenv.config()
 
@@ -36,11 +37,14 @@ async function ensureTables() {
       email VARCHAR(150) NOT NULL UNIQUE,
       mobile VARCHAR(20) NOT NULL UNIQUE,
       password VARCHAR(255) NOT NULL,
-      role ENUM('admin','collector','accountant','member') DEFAULT 'member',
+      role ENUM('admin','member') DEFAULT 'member',
       address TEXT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `)
+
+  await pool.query(`UPDATE users SET role = 'admin' WHERE role NOT IN ('admin', 'member')`)
+  await pool.query(`ALTER TABLE users MODIFY role ENUM('admin','member') DEFAULT 'member'`)
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chit_groups (
@@ -72,6 +76,37 @@ async function ensureTables() {
       INDEX (group_id),
       CONSTRAINT members_group_fk FOREIGN KEY (group_id) REFERENCES chit_groups(id) ON DELETE SET NULL
     )
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS member_chits (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      member_id INT NOT NULL,
+      chit_group_id INT NOT NULL,
+      join_date DATE NULL,
+      status ENUM('active','completed','inactive') DEFAULT 'active',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_member_chit (member_id, chit_group_id),
+      INDEX (member_id),
+      INDEX (chit_group_id),
+      CONSTRAINT member_chits_member_fk FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      CONSTRAINT member_chits_group_fk FOREIGN KEY (chit_group_id) REFERENCES chit_groups(id) ON DELETE CASCADE
+    )
+  `)
+
+  await pool.query(`
+    INSERT INTO members (member_code, full_name, email, mobile, address, status, joining_date)
+    SELECT CONCAT('MEM-', LPAD(u.id, 5, '0')), u.full_name, u.email, u.mobile, u.address, 'active', CURDATE()
+    FROM users u
+    LEFT JOIN members m ON m.mobile = u.mobile OR m.email = u.email
+    WHERE u.role = 'member' AND m.id IS NULL
+  `)
+
+  await pool.query(`
+    INSERT IGNORE INTO member_chits (member_id, chit_group_id, join_date, status)
+    SELECT id, group_id, COALESCE(joining_date, CURDATE()), status
+    FROM members
+    WHERE group_id IS NOT NULL
   `)
 
   await pool.query(`
@@ -150,12 +185,64 @@ async function ensureTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notifications (
       id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NULL,
+      member_id INT NULL,
       title VARCHAR(200) NULL,
       message TEXT NULL,
       notification_type ENUM('sms','email','whatsapp','push') NULL,
       sent_to VARCHAR(150) NULL,
       status ENUM('pending','sent','failed') DEFAULT 'pending',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX notifications_user_id_idx (user_id),
+      INDEX notifications_member_id_idx (member_id)
     )
   `)
+
+  await ensureColumn('notifications', 'user_id', 'user_id INT NULL')
+  await ensureColumn('notifications', 'member_id', 'member_id INT NULL')
+  await ensureIndex('notifications', 'notifications_user_id_idx', 'user_id')
+  await ensureIndex('notifications', 'notifications_member_id_idx', 'member_id')
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS activity_logs (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NULL,
+      role VARCHAR(30) NULL,
+      action VARCHAR(80) NOT NULL,
+      description TEXT NULL,
+      entity_type VARCHAR(80) NULL,
+      entity_id INT NULL,
+      ip_address VARCHAR(80) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX activity_logs_user_id_idx (user_id),
+      INDEX activity_logs_action_idx (action),
+      INDEX activity_logs_created_at_idx (created_at)
+    )
+  `)
+}
+
+async function ensureColumn(tableName: string, columnName: string, definition: string) {
+  const [rows] = await pool.query<(RowDataPacket & { total: number })[]>(
+    `SELECT COUNT(*) AS total
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [tableName, columnName]
+  )
+
+  if (!Number(rows[0]?.total || 0)) {
+    await pool.query(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`)
+  }
+}
+
+async function ensureIndex(tableName: string, indexName: string, columnName: string) {
+  const [rows] = await pool.query<(RowDataPacket & { total: number })[]>(
+    `SELECT COUNT(*) AS total
+     FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?`,
+    [tableName, indexName]
+  )
+
+  if (!Number(rows[0]?.total || 0)) {
+    await pool.query(`ALTER TABLE ${tableName} ADD INDEX ${indexName} (${columnName})`)
+  }
 }

@@ -1,6 +1,6 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit'
 import { authService } from '../../services/authService'
-import { AuthUser } from '../../types/auth.types'
+import { AuthUser, Role } from '../../types/auth.types'
 
 interface AuthState {
   user: AuthUser | null
@@ -51,7 +51,7 @@ export const loginUser = createAsyncThunk('auth/login', async (payload: { email:
   return authService.login(payload.email, payload.password)
 })
 
-export const registerUser = createAsyncThunk('auth/register', async (payload: { name: string; email: string; phone?: string; password: string; role: string }) => {
+export const registerUser = createAsyncThunk('auth/register', async (payload: { name: string; email: string; phone?: string; password: string; role: Role }) => {
   return authService.register(payload)
 })
 

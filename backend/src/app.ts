@@ -12,6 +12,7 @@ import expenseRoutes from './routes/expense.routes'
 import ledgerRoutes from './routes/ledger.routes'
 import reportRoutes from './routes/report.routes'
 import notificationRoutes from './routes/notification.routes'
+import memberPortalRoutes from './routes/member_portal.routes'
 import { connectDatabase } from './config/db'
 import { fail } from './utils/response'
 
@@ -59,6 +60,7 @@ app.get('/health', (_req, res) => {
 })
 
 app.use('/api/auth', authRoutes)
+app.use('/api/member', memberPortalRoutes)
 app.use('/api/members', memberRoutes)
 app.use('/api/groups', groupRoutes)
 app.use('/api/collections', collectionRoutes)
