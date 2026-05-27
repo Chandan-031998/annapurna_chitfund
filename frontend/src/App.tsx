@@ -51,6 +51,9 @@ import { loginUser, logout, registerUser } from './redux/slices/authSlice'
 import { api, getData, postData } from './services/api'
 import type { Role } from './types/auth.types'
 
+const LOGO_SRC = '/annapurna-logo.png'
+const LOGO_MARK_SRC = '/annapurna-logo-mark.png'
+
 type Status = 'ACTIVE' | 'INACTIVE' | 'PENDING' | 'PAID' | 'PARTIAL' | 'COMPLETED'
 type LedgerType = 'CREDIT' | 'DEBIT'
 
@@ -213,29 +216,31 @@ interface NavItem {
   to: string
   label: string
   icon: IconType
+  accent: string
+  bg: string
 }
 
 const adminNavItems: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: FiHome },
-  { to: '/members', label: 'Members', icon: FiUsers },
-  { to: '/chit-groups', label: 'Chit Groups', icon: FiActivity },
-  { to: '/collections', label: 'Collections', icon: FiCreditCard },
-  { to: '/auctions', label: 'Auctions', icon: FiTrendingUp },
-  { to: '/ledger', label: 'Ledger', icon: FiBookOpen },
-  { to: '/expenses', label: 'Expenses', icon: FiDollarSign },
-  { to: '/reports', label: 'Reports', icon: FiBarChart2 },
-  { to: '/notifications', label: 'Notifications', icon: FiSend }
+  { to: '/dashboard', label: 'Dashboard', icon: FiHome, accent: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.16)' },
+  { to: '/members', label: 'Members', icon: FiUsers, accent: '#22c55e', bg: 'rgba(34, 197, 94, 0.16)' },
+  { to: '/chit-groups', label: 'Chit Groups', icon: FiActivity, accent: '#f97316', bg: 'rgba(249, 115, 22, 0.16)' },
+  { to: '/collections', label: 'Collections', icon: FiCreditCard, accent: '#06b6d4', bg: 'rgba(6, 182, 212, 0.16)' },
+  { to: '/auctions', label: 'Auctions', icon: FiTrendingUp, accent: '#f59e0b', bg: 'rgba(245, 158, 11, 0.18)' },
+  { to: '/ledger', label: 'Ledger', icon: FiBookOpen, accent: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.16)' },
+  { to: '/expenses', label: 'Expenses', icon: FiDollarSign, accent: '#ef4444', bg: 'rgba(239, 68, 68, 0.16)' },
+  { to: '/reports', label: 'Reports', icon: FiBarChart2, accent: '#14b8a6', bg: 'rgba(20, 184, 166, 0.16)' },
+  { to: '/notifications', label: 'Notifications', icon: FiSend, accent: '#ec4899', bg: 'rgba(236, 72, 153, 0.16)' }
 ]
 
 const memberNavItems: NavItem[] = [
-  { to: '/member/dashboard', label: 'My Dashboard', icon: FiHome },
-  { to: '/member/chits', label: 'My Chits', icon: FiActivity },
-  { to: '/member/payments', label: 'My Payments', icon: FiCreditCard },
-  { to: '/member/dues', label: 'My Dues', icon: FiDollarSign },
-  { to: '/member/auction-status', label: 'My Auction Status', icon: FiTrendingUp },
-  { to: '/member/receipts', label: 'My Receipts', icon: FiBookOpen },
-  { to: '/notifications', label: 'Notifications', icon: FiSend },
-  { to: '/member/profile', label: 'Profile', icon: FiUsers }
+  { to: '/member/dashboard', label: 'My Dashboard', icon: FiHome, accent: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.16)' },
+  { to: '/member/chits', label: 'My Chits', icon: FiActivity, accent: '#f97316', bg: 'rgba(249, 115, 22, 0.16)' },
+  { to: '/member/payments', label: 'My Payments', icon: FiCreditCard, accent: '#06b6d4', bg: 'rgba(6, 182, 212, 0.16)' },
+  { to: '/member/dues', label: 'My Dues', icon: FiDollarSign, accent: '#ef4444', bg: 'rgba(239, 68, 68, 0.16)' },
+  { to: '/member/auction-status', label: 'My Auction Status', icon: FiTrendingUp, accent: '#f59e0b', bg: 'rgba(245, 158, 11, 0.18)' },
+  { to: '/member/receipts', label: 'My Receipts', icon: FiBookOpen, accent: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.16)' },
+  { to: '/notifications', label: 'Notifications', icon: FiSend, accent: '#ec4899', bg: 'rgba(236, 72, 153, 0.16)' },
+  { to: '/member/profile', label: 'Profile', icon: FiUsers, accent: '#22c55e', bg: 'rgba(34, 197, 94, 0.16)' }
 ]
 
 const pieColors = ['#0f8fd2', '#f59e0b', '#64748b', '#ef4444']
@@ -316,7 +321,7 @@ function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           email: values.email,
           phone: values.phone,
           password: values.password,
-          role: (values.role || 'MEMBER') as Role
+          role: 'MEMBER'
         })).unwrap()
         toast.success('Account created')
         navigate(response.user.role === 'ADMIN' ? '/dashboard' : '/member/dashboard')
@@ -327,18 +332,29 @@ function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   })
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-gradient-to-br from-sky-50 via-white to-amber-50 text-slate-950">
-      <div className="mx-auto grid min-h-screen max-w-6xl items-center gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12">
-        <section>
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white/70 px-4 py-2 text-sm font-semibold text-brand-700 shadow-sm">
+    <main className="min-h-screen overflow-x-hidden bg-[linear-gradient(135deg,#f8fbff_0%,#eef8ff_48%,#fffaf0_100%)] text-slate-950">
+      <div className="mx-auto grid min-h-screen w-full max-w-7xl items-center gap-8 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,480px)] lg:gap-12 lg:py-10">
+        <section className="order-2 mx-auto w-full max-w-2xl text-center lg:order-1 lg:mx-0 lg:text-left">
+          <img
+            src={LOGO_SRC}
+            alt="Annapurna Chit Fund Management System logo"
+            className="mx-auto mb-6 hidden h-auto w-[min(78vw,25rem)] object-contain drop-shadow-2xl lg:block lg:mx-0 lg:w-[27rem]"
+          />
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white/80 px-4 py-2 text-sm font-semibold text-brand-700 shadow-sm">
             <FiShield /> Secure finance operations
           </div>
-          <h1 className="max-w-2xl text-3xl font-bold leading-tight text-slate-950 sm:text-5xl">Annapurna Layout Chit Fund Management System</h1>
-          <p className="mt-5 max-w-xl text-base leading-7 text-slate-600 sm:text-lg">A production workspace for members, chit groups, collections, auctions, ledger, expenses, reminders and analytics.</p>
+          <h1 className="text-3xl font-bold leading-tight text-slate-950 sm:text-5xl">Annapurna Layout Chit Fund Management System</h1>
+          <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-slate-600 sm:text-lg lg:mx-0">A production workspace for members, chit groups, collections, auctions, ledger, expenses, reminders and analytics.</p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3 lg:justify-start">
+            {['Members', 'Collections', 'Reports'].map((item) => (
+              <span key={item} className="rounded-full border border-sky-100 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm">{item}</span>
+            ))}
+          </div>
         </section>
-        <form onSubmit={submit} className="rounded-2xl border border-white/80 bg-white/90 p-5 text-slate-950 shadow-glow backdrop-blur sm:p-6">
-          <h2 className="text-2xl font-bold">{mode === 'login' ? 'Login' : 'Create account'}</h2>
-          <p className="mt-1 text-sm text-slate-500">{mode === 'login' ? 'Use your registered email and password.' : 'Create an operational user with the correct role.'}</p>
+        <form onSubmit={submit} className="order-1 mx-auto w-full max-w-md rounded-2xl border border-white/80 bg-white/95 p-5 text-slate-950 shadow-glow backdrop-blur sm:p-7 lg:order-2">
+          <img src={LOGO_SRC} alt="Annapurna logo" className="mb-5 h-auto w-36 object-contain lg:hidden" />
+          <h2 className="text-2xl font-bold">{mode === 'login' ? 'Welcome back' : 'Create account'}</h2>
+          <p className="mt-1 text-sm text-slate-500">{mode === 'login' ? 'Use your registered email and password.' : 'Create your account to continue.'}</p>
           {mode === 'register' && (
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <Field label="Name" error={errors.name?.message}>
@@ -356,14 +372,6 @@ function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             <Field label="Password" error={errors.password?.message}>
               <input className="input" type="password" {...register('password', { required: 'Password is required', minLength: { value: 6, message: 'Use at least 6 characters' } })} />
             </Field>
-            {mode === 'register' && (
-              <Field label="Role">
-                <select className="input" defaultValue="MEMBER" {...register('role')}>
-                  <option value="ADMIN">Admin</option>
-                  <option value="MEMBER">Member</option>
-                </select>
-              </Field>
-            )}
           </div>
           <button disabled={loading} className="btn-primary mt-6 w-full">
             {loading ? 'Please wait...' : mode === 'login' ? 'Login' : 'Register'}
@@ -400,18 +408,35 @@ function Shell() {
         {open && <button aria-label="Close navigation" className="fixed inset-0 z-30 bg-slate-950/40 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)} />}
         <aside className={`fixed inset-y-0 left-0 z-40 w-[min(18rem,86vw)] border-r border-white/20 bg-gradient-to-b from-brand-800 via-brand-700 to-sky-700 px-4 py-5 text-white shadow-2xl transition-transform lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-sky-100">Annapurna</p>
-              <h2 className="text-lg font-bold">Chit Fund</h2>
+            <div className="flex min-w-0 items-center gap-3">
+              <img
+                src={LOGO_MARK_SRC}
+                alt="Annapurna logo"
+                className="h-14 w-14 shrink-0 rounded-xl bg-slate-950/30 object-contain p-1 shadow-lg shadow-sky-950/20"
+              />
+              <div className="min-w-0">
+                <p className="truncate text-xs uppercase tracking-[0.2em] text-sky-100">Annapurna</p>
+                <h2 className="truncate text-lg font-bold">Chit Fund</h2>
+              </div>
             </div>
             <button className="rounded-lg p-2 hover:bg-white/10 lg:hidden" onClick={() => setOpen(false)}><FiX /></button>
           </div>
-          <nav className="mt-8 space-y-1">
+          <nav className="mt-8 space-y-1.5">
             {visibleNav.map((item) => {
               const Icon = item.icon
               return (
-                <NavLink key={item.to} to={item.to} onClick={() => setOpen(false)} className={({ isActive }) => `flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition ${isActive ? 'bg-white text-brand-800 shadow-lg shadow-sky-950/10' : 'text-sky-50/90 hover:bg-white/10 hover:text-white'}`}>
-                  <Icon /> {item.label}
+                <NavLink key={item.to} to={item.to} onClick={() => setOpen(false)} className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${isActive ? 'bg-white text-brand-800 shadow-lg shadow-sky-950/10' : 'text-sky-50/90 hover:bg-white/10 hover:text-white'}`}>
+                  {({ isActive }) => (
+                    <>
+                      <span
+                        className="grid h-9 w-9 shrink-0 place-items-center rounded-lg"
+                        style={{ backgroundColor: isActive ? item.bg : 'rgba(255,255,255,0.14)', color: isActive ? item.accent : '#ffffff' }}
+                      >
+                        <Icon />
+                      </span>
+                      <span className="truncate">{item.label}</span>
+                    </>
+                  )}
                 </NavLink>
               )
             })}
